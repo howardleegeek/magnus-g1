@@ -1,0 +1,16 @@
+{
+  "name": "magnus-demo-v1",
+  "bpm": 100,
+  "default_beats": 8,
+  "comment": "Edit moves freely — no code changes needed. 'beats' overrides default_beats per move; 'hold' (seconds) overrides beats entirely. Valid action names: python examples/preflight.py --actions",
+  "moves": [
+    { "action": "high wave" },
+    { "action": "clap", "beats": 4 },
+    { "action": "heart" },
+    { "action": "hands up", "beats": 4 },
+    { "action": "high five", "beats": 4 },
+    { "action": "hug" },
+    { "action": "high wave", "beats": 4 },
+    { "action": "release arm", "hold": 2.0 }
+  ]
+}

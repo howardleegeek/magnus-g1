@@ -1,60 +1,97 @@
-"""Grade-A dance: sequence the G1's built-in arm actions into a routine.
+"""Grade-A dance: play a JSON routine of the G1's built-in arm actions.
 
 The robot's onboard controller keeps balance the whole time (high-level mode),
 so this is safe to run free-standing on day 1.
 
+Choreography lives in routines/*.json — edit those, not this file. Timing is
+beat-based: hold = beats * 60 / bpm, so the routine stays synced to your track.
+
 Usage:
-    python examples/arm_dance.py <network-interface>   # e.g. eth0 / en7
+    python examples/arm_dance.py --dry-run                      # validate, no robot/SDK needed
+    python examples/arm_dance.py <iface>                        # run routines/demo.json
+    python examples/arm_dance.py <iface> --routine routines/x.json
 
-List the action names your installed SDK version supports:
-    python -c "from unitree_sdk2py.g1.arm.g1_arm_action_client import action_map; print(sorted(action_map))"
-
-Requires: unitree_sdk2_python installed, laptop on 192.168.123.x, robot in
-normal (balanced stand / motion) mode via the remote or app.
+Preflight first: python examples/preflight.py
 """
 
+import argparse
+import json
 import sys
 import time
+from pathlib import Path
 
-from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-from unitree_sdk2py.g1.arm.g1_arm_action_client import G1ArmActionClient, action_map
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_ROUTINE = REPO_ROOT / "routines" / "demo.json"
 
-# Routine: (action name, seconds to hold before the next move).
-# Names must exist in action_map — verify with the one-liner in the docstring;
-# they occasionally change between SDK releases.
-ROUTINE = [
-    ("high wave", 3.0),
-    ("clap", 3.0),
-    ("heart", 3.0),
-    ("hands up", 3.0),
-    ("high five", 3.0),
-    ("hug", 3.0),
-    ("high wave", 3.0),
-    ("release arm", 2.0),  # always end by releasing the arms
-]
+
+def load_routine(path: Path) -> tuple[str, list[tuple[str, float]]]:
+    """Return (name, [(action, hold_seconds), ...]). Raises SystemExit on bad input."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        sys.exit(f"cannot load routine {path}: {e}")
+
+    bpm = data.get("bpm", 100)
+    default_beats = data.get("default_beats", 8)
+    beat = 60.0 / bpm
+
+    moves = []
+    for i, m in enumerate(data.get("moves", [])):
+        if "action" not in m:
+            sys.exit(f"move #{i} missing 'action' field")
+        hold = m["hold"] if "hold" in m else m.get("beats", default_beats) * beat
+        moves.append((m["action"], float(hold)))
+
+    if not moves:
+        sys.exit("routine has no moves")
+    if moves[-1][0] != "release arm":
+        # Safety: never leave the arms holding a pose under load.
+        moves.append(("release arm", 2.0))
+    return data.get("name", path.stem), moves
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        sys.exit(f"usage: {sys.argv[0]} <network-interface>")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("iface", nargs="?", help="network interface, e.g. eth0 / en7")
+    parser.add_argument("--routine", type=Path, default=DEFAULT_ROUTINE)
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the timeline and validate; no robot, no SDK")
+    args = parser.parse_args()
 
-    ChannelFactoryInitialize(0, sys.argv[1])
+    name, moves = load_routine(args.routine)
+    total = sum(h for _, h in moves)
 
+    print(f"routine: {name}  ({len(moves)} moves, {total:.0f}s total)")
+    t = 0.0
+    for action, hold in moves:
+        print(f"  {t:6.1f}s  {action:<15} hold {hold:.1f}s")
+        t += hold
+
+    if args.dry_run:
+        print("dry-run OK (action names are checked against the SDK at real runtime)")
+        return
+    if not args.iface:
+        parser.error("network interface required unless --dry-run")
+
+    # SDK imports are deferred so --dry-run works on machines without the SDK.
+    from unitree_sdk2py.core.channel import ChannelFactoryInitialize
+    from unitree_sdk2py.g1.arm.g1_arm_action_client import G1ArmActionClient, action_map
+
+    missing = [a for a, _ in moves if a not in action_map]
+    if missing:
+        sys.exit(f"actions not in this SDK's action_map: {missing}\n"
+                 f"list valid names: python examples/preflight.py --actions")
+
+    ChannelFactoryInitialize(0, args.iface)
     client = G1ArmActionClient()
     client.SetTimeout(10.0)
     client.Init()
 
-    missing = [name for name, _ in ROUTINE if name not in action_map]
-    if missing:
-        sys.exit(f"actions not in this SDK's action_map: {missing} — "
-                 f"run the list one-liner in the docstring and edit ROUTINE")
-
-    print("Starting routine — keep the e-stop remote in hand.")
-    for name, hold in ROUTINE:
-        print(f"  -> {name}")
-        client.ExecuteAction(action_map[name])
+    print("Starting — keep the e-stop remote in hand.")
+    for action, hold in moves:
+        print(f"  -> {action}")
+        client.ExecuteAction(action_map[action])
         time.sleep(hold)
-
     print("Done. Arms released.")
 
 

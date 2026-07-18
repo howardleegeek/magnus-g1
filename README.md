@@ -42,10 +42,12 @@ python unitree_sdk2_python/example/g1/high_level/g1_loco_client_example.py <ifac
 The G1 ships with predefined arm actions (wave, clap, hug, high-five, heart, kiss…). Sequence them to music while the built-in controller balances/steps.
 
 ```bash
-python examples/arm_dance.py <network-interface>
+python examples/preflight.py                 # Gate 0 checks: network, SDK, action map
+python examples/arm_dance.py --dry-run       # validate routine + print timeline (no robot needed)
+python examples/arm_dance.py <iface>         # run it (default routine: routines/demo.json)
 ```
 
-See [`examples/arm_dance.py`](examples/arm_dance.py).
+Choreography is data, not code: edit [`routines/demo.json`](routines/demo.json) — moves are timed in **beats at a BPM**, so pick your track's BPM and the routine stays on the music. `python examples/preflight.py --actions` lists valid action names.
 
 ### Grade B: whole-body dance / kungfu (RL, the impressive one)
 
@@ -123,6 +125,7 @@ Mega-index: [awesome-unitree-robots](https://github.com/shaoxiang/awesome-unitre
 ## Repo layout
 
 ```
-examples/   runnable scripts (start: arm_dance.py)
-docs/       runbooks (whole-body-dance.md)
+examples/   runnable scripts (preflight.py → arm_dance.py)
+routines/   choreography as JSON (BPM/beat-timed) — editable by non-engineers
+docs/       SOP-G1-DANCE.md (master SOP), whole-body-dance.md, LOG.md
 ```

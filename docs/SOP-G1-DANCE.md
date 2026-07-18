@@ -37,7 +37,7 @@ Timeline at a glance:
 5. **First command** — with robot in normal balanced-stand mode via remote, run the official high-level loco example; command a small in-place step.
 
 ### GATE 0 ✅
-- [ ] `ping 192.168.123.161` < 2 ms, 0% loss
+- [ ] `python examples/preflight.py` exits 0 (automates: ping, SDK install, action map)
 - [ ] State topic prints live joint/IMU data
 - [ ] One high-level command visibly executed (e.g., small velocity step) and stopped cleanly
 - [ ] E-stop tested once during an active command — robot damps immediately
@@ -53,14 +53,17 @@ High-level mode: onboard controller balances; we only sequence built-in arm acti
 ### Steps
 1. Clone this repo onto the dev laptop; list supported actions on YOUR SDK version:
    ```bash
-   python -c "from unitree_sdk2py.g1.arm.g1_arm_action_client import action_map; print(sorted(action_map))"
+   python examples/preflight.py --actions
    ```
-2. Edit `ROUTINE` in `examples/arm_dance.py` to taste (only names from step 1).
+2. Edit `routines/demo.json` (or copy it): set `bpm` to your track's BPM, arrange `moves` using only names from step 1. Validate offline:
+   ```bash
+   python examples/arm_dance.py --dry-run --routine routines/demo.json
+   ```
 3. Robot free-standing in a 3 m clear radius, e-stop in hand. Run:
    ```bash
-   python examples/arm_dance.py <iface>
+   python examples/arm_dance.py <iface> --routine routines/demo.json
    ```
-4. Iterate timing (`hold` values) until it looks intentional, not robotic-pause-y. Tip: pick music first, set holds to the beat (e.g., 2 bars per move at the track's BPM).
+4. Iterate `beats` per move until it looks intentional, not robotic-pause-y (the script auto-appends `release arm` if you forget it).
 5. Optional flourish: interleave `LocoClient` small rotations/steps between arm actions for a "turn and wave" effect — keep velocities ≤ 0.3 m/s indoors.
 
 ### GATE 1 ✅
