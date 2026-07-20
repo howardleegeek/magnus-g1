@@ -1,7 +1,7 @@
 # SOP — Implement magnus-g1 stack on a robot unit
 
 **Scope:** take github.com/howardleegeek/magnus-g1 from repo to a working, voiced dance demo on a physical G1.
-**First unit:** 天河 (Tianhe) — see Unit Registry below.
+**First unit:** G1-01 (the Magnus Unitree G1 EDU) — see Unit Registry below.
 **Roles:** OPERATOR (runs commands, holds e-stop) + SPOTTER (second person, watches robot, calls aborts). Solo sessions allowed ONLY for Phase C onward with robot in normal balanced mode (no low-level work solo, ever).
 
 **Session rule:** one line in `docs/LOG.md` per session (date, unit, phase reached, result, issues). No log line = session didn't happen.
@@ -12,7 +12,7 @@
 
 | Unit | Model | Serial | Firmware | Notes |
 |---|---|---|---|---|
-| 天河 (Tianhe) | G1 EDU | _fill on first session_ | _fill from app_ | unit #1 |
+| G1-01 | G1 EDU | _fill on first session_ | _fill from app_ | unit #1 |
 
 Record serial + firmware version (from the Unitree app) during Phase B — firmware version determines which `action_map` entries exist, and support tickets require the serial.
 
@@ -20,7 +20,7 @@ Record serial + firmware version (from the Unitree app) during Phase B — firmw
 
 ## Phase A — Pre-session prep (no robot needed, do the day before)
 
-On the laptop that will plug into 天河:
+On the laptop that will plug into the G1:
 
 ```bash
 git clone git@github.com:howardleegeek/magnus-g1.git && cd magnus-g1
@@ -96,7 +96,7 @@ No sound at step 2/3: check volume isn't 0, check the app's audio settings, retr
 5. Film run #3 (landscape, clean background).
 
 **GATE E:** 3 consecutive clean runs + video captured + LOG.md line written.
-This is SOP-G1-DANCE Gate 1 — 天河 is now demo-capable.
+This is SOP-G1-DANCE Gate 1 — the unit is now demo-capable.
 
 ---
 
