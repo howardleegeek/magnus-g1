@@ -46,7 +46,10 @@ python examples/voice.py --check voices/intro.wav   # every file: "routine-safe"
 1. Battery ≥ 60%. Robot on flat ground, 3 m clear radius, no glass/edges nearby.
 2. Pair and TEST the remote: enter damping mode once — robot must go limp. This is the abort button for everything that follows.
 3. Record serial + firmware into Unit Registry (Unitree app).
-4. Ethernet laptop ↔ robot. Laptop static IP `192.168.123.222/24`.
+4. Ethernet laptop ↔ robot: the **RJ45 port at the back of the neck** (next to the
+   USB-C port — that USB-C is a peripheral/debug port for the onboard PC, NOT the
+   laptop connection). Laptop static IP `192.168.123.222/24`; MacBooks need a
+   USB-C→Ethernet adapter on the laptop side.
 5. Power robot to normal balanced-stand mode via the standard remote sequence.
 
 **GATE B:** e-stop verified working + robot standing + `ping 192.168.123.161` clean.
