@@ -60,7 +60,8 @@ def main() -> None:
     parser.add_argument("--check", type=Path, help="validate a WAV offline and exit")
     parser.add_argument("--play", type=Path, help="stream a WAV to the robot speaker")
     parser.add_argument("--tts", help="speak text via the robot's built-in TTS")
-    parser.add_argument("--speaker", type=int, default=0, help="TTS speaker id (default 0)")
+    parser.add_argument("--speaker", type=int, default=1,
+                        help="built-in TTS voice: 1=English (default), 0=Chinese")
     parser.add_argument("--volume", type=int, help="set speaker volume 0-100")
     parser.add_argument("--stop", action="store_true", help="stop any playing audio")
     args = parser.parse_args()
