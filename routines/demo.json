@@ -2,9 +2,10 @@
   "name": "magnus-demo-v1",
   "bpm": 100,
   "default_beats": 8,
-  "comment": "Edit moves freely — no code changes needed. 'beats' overrides default_beats per move; 'hold' (seconds) overrides beats entirely. Valid action names: python examples/preflight.py --actions",
+  "comment": "Edit moves freely — no code changes needed. 'beats' overrides default_beats per move; 'hold' (seconds) overrides beats entirely. Voice: 'tts' (built-in) or 'say' (WAV path, <3s, 16kHz mono 16-bit). Valid action names: python examples/preflight.py --actions",
+  "tts_speaker": 0,
   "moves": [
-    { "action": "high wave" },
+    { "action": "high wave", "say": "voices/intro.wav" },
     { "action": "clap", "beats": 4 },
     { "action": "heart" },
     { "action": "hands up", "beats": 4 },

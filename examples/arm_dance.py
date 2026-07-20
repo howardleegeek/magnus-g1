@@ -1,10 +1,13 @@
-"""Grade-A dance: play a JSON routine of the G1's built-in arm actions.
+"""Grade-A dance: play a JSON routine of the G1's built-in arm actions + voice.
 
 The robot's onboard controller keeps balance the whole time (high-level mode),
 so this is safe to run free-standing on day 1.
 
 Choreography lives in routines/*.json — edit those, not this file. Timing is
-beat-based: hold = beats * 60 / bpm, so the routine stays synced to your track.
+beat-based: hold = beats * 60 / bpm. A move may also speak, via either:
+    "tts": "Hello!"              robot's built-in TTS
+    "say": "voices/intro.wav"    pre-generated WAV (16 kHz mono 16-bit, < 3 s)
+Voice fires right before the move's arm action.
 
 Usage:
     python examples/arm_dance.py --dry-run                      # validate, no robot/SDK needed
@@ -20,12 +23,14 @@ import sys
 import time
 from pathlib import Path
 
+import voice  # sibling module: WAV validation + chunk constants
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ROUTINE = REPO_ROOT / "routines" / "demo.json"
 
 
-def load_routine(path: Path) -> tuple[str, list[tuple[str, float]]]:
-    """Return (name, [(action, hold_seconds), ...]). Raises SystemExit on bad input."""
+def load_routine(path: Path) -> tuple[dict, list[dict]]:
+    """Return (routine_meta, moves). Each move: {action, hold, tts?, say_pcm?}."""
     try:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as e:
@@ -40,14 +45,25 @@ def load_routine(path: Path) -> tuple[str, list[tuple[str, float]]]:
         if "action" not in m:
             sys.exit(f"move #{i} missing 'action' field")
         hold = m["hold"] if "hold" in m else m.get("beats", default_beats) * beat
-        moves.append((m["action"], float(hold)))
+        move = {"action": m["action"], "hold": float(hold)}
+        if "tts" in m:
+            move["tts"] = m["tts"]
+        if "say" in m:
+            wav = REPO_ROOT / m["say"]
+            pcm = voice.load_pcm(wav)  # validates 16k/mono/16-bit, exits on mismatch
+            if len(pcm) > voice.CHUNK:
+                sys.exit(f"move #{i}: {wav} is {len(pcm)/voice.BYTES_PER_SEC:.1f}s — "
+                         f"routine clips must be < 3s (use examples/voice.py for long audio)")
+            move["say_pcm"] = pcm
+            move["say"] = m["say"]
+        moves.append(move)
 
     if not moves:
         sys.exit("routine has no moves")
-    if moves[-1][0] != "release arm":
+    if moves[-1]["action"] != "release arm":
         # Safety: never leave the arms holding a pose under load.
-        moves.append(("release arm", 2.0))
-    return data.get("name", path.stem), moves
+        moves.append({"action": "release arm", "hold": 2.0})
+    return data, moves
 
 
 def main() -> None:
@@ -58,14 +74,18 @@ def main() -> None:
                         help="print the timeline and validate; no robot, no SDK")
     args = parser.parse_args()
 
-    name, moves = load_routine(args.routine)
-    total = sum(h for _, h in moves)
+    data, moves = load_routine(args.routine)
+    uses_voice = any("tts" in m or "say_pcm" in m for m in moves)
+    total = sum(m["hold"] for m in moves)
 
-    print(f"routine: {name}  ({len(moves)} moves, {total:.0f}s total)")
+    print(f"routine: {data.get('name', args.routine.stem)}  "
+          f"({len(moves)} moves, {total:.0f}s total{', with voice' if uses_voice else ''})")
     t = 0.0
-    for action, hold in moves:
-        print(f"  {t:6.1f}s  {action:<15} hold {hold:.1f}s")
-        t += hold
+    for m in moves:
+        line = m.get("tts") or m.get("say") or ""
+        print(f"  {t:6.1f}s  {m['action']:<15} hold {m['hold']:.1f}s"
+              + (f"   🔊 {line}" if line else ""))
+        t += m["hold"]
 
     if args.dry_run:
         print("dry-run OK (action names are checked against the SDK at real runtime)")
@@ -77,7 +97,7 @@ def main() -> None:
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize
     from unitree_sdk2py.g1.arm.g1_arm_action_client import G1ArmActionClient, action_map
 
-    missing = [a for a, _ in moves if a not in action_map]
+    missing = [m["action"] for m in moves if m["action"] not in action_map]
     if missing:
         sys.exit(f"actions not in this SDK's action_map: {missing}\n"
                  f"list valid names: python examples/preflight.py --actions")
@@ -87,11 +107,26 @@ def main() -> None:
     client.SetTimeout(10.0)
     client.Init()
 
+    audio = None
+    if uses_voice:
+        from unitree_sdk2py.g1.audio.g1_audio_client import AudioClient
+        audio = AudioClient()
+        audio.SetTimeout(10.0)
+        audio.Init()
+
+    speaker = data.get("tts_speaker", 0)
+    stream_id = str(int(time.time() * 1000))
     print("Starting — keep the e-stop remote in hand.")
-    for action, hold in moves:
-        print(f"  -> {action}")
-        client.ExecuteAction(action_map[action])
-        time.sleep(hold)
+    for m in moves:
+        if audio and "tts" in m:
+            audio.TtsMaker(m["tts"], speaker)          # speaks async on the robot
+        if audio and "say_pcm" in m:
+            audio.PlayStream(voice.APP, stream_id, m["say_pcm"])  # single chunk, returns fast
+        print(f"  -> {m['action']}")
+        client.ExecuteAction(action_map[m["action"]])
+        time.sleep(m["hold"])
+    if audio:
+        audio.PlayStop(voice.APP)
     print("Done. Arms released.")
 
 

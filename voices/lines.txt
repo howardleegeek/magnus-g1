@@ -1,0 +1,22 @@
+# Magnus G1 voice pack — script lines
+# Generate each line as a WAV (16 kHz mono 16-bit) named as shown.
+# Keep routine clips UNDER 3 SECONDS (one stream chunk) — longer clips are
+# for standalone playback via examples/voice.py only.
+#
+# Generation (pick one):
+#   A) edge-tts (free, natural):
+#      pip install edge-tts
+#      edge-tts --voice en-US-AriaNeural --text "<line>" --write-media tmp.mp3
+#      ffmpeg -i tmp.mp3 -ar 16000 -ac 1 -sample_fmt s16 voices/<name>.wav
+#   B) macOS say (fastest):
+#      say -v Samantha -o tmp.aiff "<line>"
+#      ffmpeg -i tmp.aiff -ar 16000 -ac 1 -sample_fmt s16 voices/<name>.wav
+#   C) ElevenLabs — for the final brand voice, same ffmpeg convert.
+#
+# Validate every file before a robot session:
+#   python examples/voice.py --check voices/<name>.wav
+
+intro.wav        | Hello! I'm the Magnus robot. Watch this.
+clap_along.wav   | Clap along with me!
+heart.wav        | This one's for you.
+outro.wav        | Thank you! Magnus Labs — robotics, deployed.

@@ -66,8 +66,25 @@ High-level mode: onboard controller balances; we only sequence built-in arm acti
 4. Iterate `beats` per move until it looks intentional, not robotic-pause-y (the script auto-appends `release arm` if you forget it).
 5. Optional flourish: interleave `LocoClient` small rotations/steps between arm actions for a "turn and wave" effect — keep velocities ≤ 0.3 m/s indoors.
 
+### Voice lines (part of Phase 1)
+
+The G1 speaker takes **16 kHz mono 16-bit PCM WAV only**, streamed via the SDK's
+`AudioClient` (or its built-in TTS for quick tests).
+
+1. Write script lines in `voices/lines.txt`; generate WAVs per its header
+   (edge-tts or macOS `say`, then the ffmpeg convert line).
+2. Validate offline: `python examples/voice.py --check voices/<name>.wav`
+   — routine clips must report "1 chunk (routine-safe)" (< 3 s).
+3. Standalone test on robot: volume then a file:
+   `python examples/voice.py <iface> --volume 85`
+   `python examples/voice.py <iface> --play voices/intro.wav`
+4. In routines, attach to a move: `"say": "voices/intro.wav"` (file) or
+   `"tts": "text"` (built-in voice). Voice fires as the move starts.
+5. Abort mid-audio: `python examples/voice.py <iface> --stop`.
+
 ### GATE 1 ✅
 - [ ] Full routine runs 3× consecutively, no e-stop, no fault codes
+- [ ] Voice line plays in sync with its move (volume set for room size)
 - [ ] Ends with `release arm` every time
 - [ ] 60-sec phone video recorded → drop in Magnus demo assets
 
