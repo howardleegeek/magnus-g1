@@ -19,6 +19,9 @@ Magnus Labs — Unitree **G1 EDU** programming workspace. Control code, dance/de
 
 ### Setup (dev laptop)
 
+> Team members: follow [docs/SETUP.md](docs/SETUP.md) — full self-serve install
+> with troubleshooting. Done when `pytest` prints 14 passed.
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 git clone https://github.com/unitreerobotics/unitree_sdk2_python
