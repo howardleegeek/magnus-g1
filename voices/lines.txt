@@ -19,4 +19,5 @@
 intro.wav        | Hello! I'm the Magnus robot. Watch this.
 clap_along.wav   | Clap along with me!
 heart.wav        | This one's for you.
-outro.wav        | Thank you! Magnus Labs — robotics, deployed.
+# third field (optional) = speech rate in wpm; used to keep a line under 3s
+outro.wav        | Thank you! Magnus Labs — robotics, deployed. | 230
