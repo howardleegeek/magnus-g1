@@ -1,5 +1,11 @@
 # Onboard install — put the stack INSIDE the robot (laptop-free demos)
 
+> **One-command version:** with the cable connected and laptop IP set, run
+> `./scripts/install_onboard.sh` — it does every step below automatically and
+> ends with the robot speaking the intro line (audible proof of install).
+> `--dry-run` previews the plan. The manual steps below are the reference for
+> when the script hits something unexpected.
+
 Goal: voice files + dance routines live on the G1's internal development
 computer (PC2), so the robot performs **without a laptop attached**.
 
