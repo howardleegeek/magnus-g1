@@ -27,7 +27,7 @@ git clone git@github.com:howardleegeek/magnus-g1.git && cd magnus-g1
 python3 -m venv .venv && source .venv/bin/activate
 git clone https://github.com/unitreerobotics/unitree_sdk2_python
 pip install -e unitree_sdk2_python pytest
-python -m pytest tests/ -q            # MUST be 14 passed — do not proceed on red
+python -m pytest tests/ -q            # MUST be 24 passed — do not proceed on red
 python examples/arm_dance.py --dry-run
 ```
 

@@ -21,3 +21,6 @@ clap_along.wav   | Clap along with me!
 heart.wav        | This one's for you.
 # third field (optional) = speech rate in wpm; used to keep a line under 3s
 outro.wav        | Thank you! Magnus Labs — robotics, deployed. | 230
+
+# the showroom deployment (button-triggered, standalone play — no 3s limit)
+showroom_welcome.wav | Welcome to Sofa showroom. Enjoy exploring our new outdoor collection.

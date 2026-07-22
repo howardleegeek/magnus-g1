@@ -20,7 +20,7 @@ Magnus Labs — Unitree **G1 EDU** programming workspace. Control code, dance/de
 ### Setup (dev laptop)
 
 > Team members: follow [docs/SETUP.md](docs/SETUP.md) — full self-serve install
-> with troubleshooting. Done when `pytest` prints 14 passed.
+> with troubleshooting. Done when `pytest` prints 24 passed.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -125,10 +125,19 @@ Mega-index: [awesome-unitree-robots](https://github.com/shaoxiang/awesome-unitre
 3. Sim (`unitree_mujoco`) → sim2sim → gantry → free-standing. Never skip a stage.
 4. Clear 3 m radius; a falling G1 is ~35 kg.
 
+## Showroom deployment (Tier 1 — the showroom)
+
+RB button → welcome message, running as a systemd service inside the robot.
+One command at the robot: `./scripts/deploy_showroom.sh`. Full doc:
+[docs/SHOWROOM-DEPLOY.md](docs/SHOWROOM-DEPLOY.md).
+
 ## Repo layout
 
 ```
-examples/   runnable scripts (preflight.py → arm_dance.py)
-routines/   choreography as JSON (BPM/beat-timed) — editable by non-engineers
-docs/       SOP-G1-DANCE.md (master SOP), whole-body-dance.md, LOG.md
+examples/   runnable scripts (preflight → arm_dance / voice / button_trigger)
+routines/   demo.json (choreography) + buttons.json (button→action map) — data, not code
+voices/     voice pack (lines.txt = source; scripts/build_voices.sh = builder)
+scripts/    build_voices / install_onboard (one-shot) / deploy_showroom (one-shot)
+deploy/     systemd units for the robot
+docs/       SOPs: SETUP, CHECKLIST-FIRST-SESSION, SHOWROOM-DEPLOY, ONBOARD-INSTALL, SOP-CN …
 ```

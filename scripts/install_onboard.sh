@@ -51,7 +51,7 @@ run ssh "$PC2" 'cd magnus && { [ -d venv ] || python3 -m venv venv; } && \
     ./venv/bin/pip -q install -e ./unitree_sdk2_python pytest 2>&1 | tail -2 || \
     echo "WARN: pip needed internet it may not have — see ONBOARD-INSTALL.md wheels note"'
 
-step "5/6 verify ONBOARD (the 14-test gate, running inside the robot)"
+step "5/6 verify ONBOARD (the 24-test gate, running inside the robot)"
 run ssh "$PC2" 'cd magnus && ./venv/bin/python -m pytest magnus-g1/tests/ -q'
 
 step "6/6 audible smoke test — the robot announces itself"
