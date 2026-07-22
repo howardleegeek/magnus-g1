@@ -27,14 +27,26 @@ from pathlib import Path
 from typing import NamedTuple
 
 KEY_BITS = {
-    "R1": 0, "L1": 1, "START": 2, "SELECT": 3,
-    "R2": 4, "L2": 5, "F1": 6, "F2": 7,
-    "A": 8, "B": 9, "X": 10, "Y": 11,
-    "UP": 12, "RIGHT": 13, "DOWN": 14, "LEFT": 15,
+    "R1": 0,
+    "L1": 1,
+    "START": 2,
+    "SELECT": 3,
+    "R2": 4,
+    "L2": 5,
+    "F1": 6,
+    "F2": 7,
+    "A": 8,
+    "B": 9,
+    "X": 10,
+    "Y": 11,
+    "UP": 12,
+    "RIGHT": 13,
+    "DOWN": 14,
+    "LEFT": 15,
 }
 # Colloquial names (Calvin's guide says "RB") → canonical SDK names.
 ALIASES = {"RB": "R1", "LB": "L1", "RT": "R2", "LT": "L2"}
-VERBS = ("play", "cmd", "tts")   # exactly one per action
+VERBS = ("play", "cmd", "tts")  # exactly one per action
 
 
 class Config(NamedTuple):
@@ -71,7 +83,9 @@ def load_config(path: Path, repo_root: Path) -> Config:
 
         cooldown = float(data.get("cooldown_sec", 1.5))
         if not math.isfinite(cooldown) or cooldown < 0:
-            raise ValueError(f"cooldown_sec must be a finite number >= 0, got {cooldown}")
+            raise ValueError(
+                f"cooldown_sec must be a finite number >= 0, got {cooldown}"
+            )
 
         grace = float(data.get("combo_grace_sec", 0.15))
         if not math.isfinite(grace) or not 0 <= grace <= 2:
@@ -91,10 +105,14 @@ def load_config(path: Path, repo_root: Path) -> Config:
         for btn, action in buttons.items():
             b = canon(btn)
             if b not in KEY_BITS:
-                raise ValueError(f"unknown button '{btn}' — valid: {sorted(KEY_BITS)} "
-                                 f"(aliases: {sorted(ALIASES)})")
+                raise ValueError(
+                    f"unknown button '{btn}' — valid: {sorted(KEY_BITS)} "
+                    f"(aliases: {sorted(ALIASES)})"
+                )
             if not isinstance(action, dict) or sum(v in action for v in VERBS) != 1:
-                raise ValueError(f"button '{btn}': action must have exactly one of {VERBS}")
+                raise ValueError(
+                    f"button '{btn}': action must have exactly one of {VERBS}"
+                )
             if "play" in action:
                 wav = repo_root / str(action["play"])
                 if not wav.exists():
@@ -105,20 +123,23 @@ def load_config(path: Path, repo_root: Path) -> Config:
         return Config(cooldown, grace, volume, mapping)
     except SystemExit:
         raise
-    except BaseException as e:  # OSError, JSON, type errors — everything → one exit path
+    except (
+        BaseException
+    ) as e:  # OSError, JSON, type errors — everything → one exit path
         sys.exit(f"bad config {path}: {e}")
 
 
 class ButtonEngine:
     """Edge + solo-grace + cooldown state machine. update() returns actions to fire."""
 
-    def __init__(self, mapping: dict[str, dict], cooldown: float = 1.5,
-                 grace: float = 0.15):
+    def __init__(
+        self, mapping: dict[str, dict], cooldown: float = 1.5, grace: float = 0.15
+    ):
         self.mapping = mapping
         self.cooldown = cooldown
         self.grace = grace
         self._prev: frozenset[str] = frozenset()
-        self._pending: dict[str, float] = {}     # button -> edge time, awaiting grace
+        self._pending: dict[str, float] = {}  # button -> edge time, awaiting grace
         self._last_fire: dict[str, float] = {}
 
     def carry_from(self, old: "ButtonEngine") -> "ButtonEngine":
@@ -138,8 +159,11 @@ class ButtonEngine:
     def update(self, keys: frozenset[str], now: float) -> list[tuple[str, dict]]:
         # New solo press edges enter the grace queue.
         for b in keys - self._prev:
-            if (b in self.mapping and keys == {b}
-                    and now - self._last_fire.get(b, float("-inf")) >= self.cooldown):
+            if (
+                b in self.mapping
+                and keys == {b}
+                and now - self._last_fire.get(b, float("-inf")) >= self.cooldown
+            ):
                 self._pending[b] = now
         # A pending press is cancelled the moment it stops being a solo hold.
         fired = []

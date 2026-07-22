@@ -52,8 +52,10 @@ def load_routine(path: Path) -> tuple[dict, list[dict]]:
             wav = REPO_ROOT / m["say"]
             pcm = voice.load_pcm(wav)  # validates 16k/mono/16-bit, exits on mismatch
             if len(pcm) > voice.CHUNK:
-                sys.exit(f"move #{i}: {wav} is {len(pcm)/voice.BYTES_PER_SEC:.1f}s — "
-                         f"routine clips must be < 3s (use examples/voice.py for long audio)")
+                sys.exit(
+                    f"move #{i}: {wav} is {len(pcm)/voice.BYTES_PER_SEC:.1f}s — "
+                    f"routine clips must be < 3s (use examples/voice.py for long audio)"
+                )
             move["say_pcm"] = pcm
             move["say"] = m["say"]
         moves.append(move)
@@ -70,21 +72,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("iface", nargs="?", help="network interface, e.g. eth0 / en7")
     parser.add_argument("--routine", type=Path, default=DEFAULT_ROUTINE)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="print the timeline and validate; no robot, no SDK")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the timeline and validate; no robot, no SDK",
+    )
     args = parser.parse_args()
 
     data, moves = load_routine(args.routine)
     uses_voice = any("tts" in m or "say_pcm" in m for m in moves)
     total = sum(m["hold"] for m in moves)
 
-    print(f"routine: {data.get('name', args.routine.stem)}  "
-          f"({len(moves)} moves, {total:.0f}s total{', with voice' if uses_voice else ''})")
+    print(
+        f"routine: {data.get('name', args.routine.stem)}  "
+        f"({len(moves)} moves, {total:.0f}s total{', with voice' if uses_voice else ''})"
+    )
     t = 0.0
     for m in moves:
         line = m.get("tts") or m.get("say") or ""
-        print(f"  {t:6.1f}s  {m['action']:<15} hold {m['hold']:.1f}s"
-              + (f"   🔊 {line}" if line else ""))
+        print(
+            f"  {t:6.1f}s  {m['action']:<15} hold {m['hold']:.1f}s"
+            + (f"   🔊 {line}" if line else "")
+        )
         t += m["hold"]
 
     if args.dry_run:
@@ -99,8 +108,10 @@ def main() -> None:
 
     missing = [m["action"] for m in moves if m["action"] not in action_map]
     if missing:
-        sys.exit(f"actions not in this SDK's action_map: {missing}\n"
-                 f"list valid names: python examples/preflight.py --actions")
+        sys.exit(
+            f"actions not in this SDK's action_map: {missing}\n"
+            f"list valid names: python examples/preflight.py --actions"
+        )
 
     ChannelFactoryInitialize(0, args.iface)
     client = G1ArmActionClient()
@@ -110,6 +121,7 @@ def main() -> None:
     audio = None
     if uses_voice:
         from unitree_sdk2py.g1.audio.g1_audio_client import AudioClient
+
         audio = AudioClient()
         audio.SetTimeout(10.0)
         audio.Init()
@@ -119,9 +131,11 @@ def main() -> None:
     print("Starting — keep the e-stop remote in hand.")
     for m in moves:
         if audio and "tts" in m:
-            audio.TtsMaker(m["tts"], speaker)          # speaks async on the robot
+            audio.TtsMaker(m["tts"], speaker)  # speaks async on the robot
         if audio and "say_pcm" in m:
-            audio.PlayStream(voice.APP, stream_id, m["say_pcm"])  # single chunk, returns fast
+            audio.PlayStream(
+                voice.APP, stream_id, m["say_pcm"]
+            )  # single chunk, returns fast
         print(f"  -> {m['action']}")
         client.ExecuteAction(action_map[m["action"]])
         time.sleep(m["hold"])

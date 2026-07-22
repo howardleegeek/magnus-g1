@@ -22,7 +22,7 @@ while IFS='|' read -r name text rate; do
     else
         tmp="$(mktemp /tmp/voice_XXXX).aiff"
         say -v "$VOICE" ${rate:+-r "$rate"} -o "$tmp" "$text"
-        ffmpeg -y -loglevel error -i "$tmp" -ar 16000 -ac 1 -sample_fmt s16 "$out"
+        ffmpeg -nostdin -y -loglevel error -i "$tmp" -ar 16000 -ac 1 -sample_fmt s16 "$out"
         rm -f "$tmp"
         echo "built: $out  (\"$text\")"
     fi

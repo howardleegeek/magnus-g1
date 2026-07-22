@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO_ROOT / "routines" / "buttons.json"
 HEARTBEAT_TIMEOUT = 10.0
 DEFAULT_VOLUME = 85
-TTS_SEC_PER_CHAR = 0.09          # crude speech-duration estimate for busy-guard
+TTS_SEC_PER_CHAR = 0.09  # crude speech-duration estimate for busy-guard
 TTS_MIN_SEC = 2.0
 
 
@@ -66,6 +66,7 @@ class Player:
                 log(f"finished: {label}")
             except Exception as e:  # audio failures must never kill the daemon
                 log(f"ERROR audio ({label}): {e}")
+
         self._thread = threading.Thread(target=run, daemon=True)
         self._thread.start()
 
@@ -80,6 +81,7 @@ class Player:
         def run():
             self.client.TtsMaker(text, self.speaker)
             time.sleep(hold)
+
         self._start(run, f"tts {text[:40]!r}")
 
     def set_volume(self, vol: int) -> None:
@@ -92,7 +94,9 @@ class Player:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("iface", help="network interface (eth0/eth1 on the Jetson — `ip a`)")
+    parser.add_argument(
+        "iface", help="network interface (eth0/eth1 on the Jetson — `ip a`)"
+    )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--speaker", type=int, default=1, help="TTS voice: 1=EN, 0=CN")
     parser.add_argument("--debug", action="store_true", help="log every key change")
@@ -100,8 +104,11 @@ def main() -> None:
 
     cfg = load_config(args.config, REPO_ROOT)
     # Preload audio so presses never wait on disk (and bad WAVs fail at startup).
-    pcm_cache = {b: voice.load_pcm(REPO_ROOT / a["play"])
-                 for b, a in cfg.mapping.items() if "play" in a}
+    pcm_cache = {
+        b: voice.load_pcm(REPO_ROOT / a["play"])
+        for b, a in cfg.mapping.items()
+        if "play" in a
+    }
     config_mtime = args.config.stat().st_mtime
 
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
@@ -117,7 +124,9 @@ def main() -> None:
     try:  # GetVolume doubles as an audio-service/firmware probe
         log(f"audio service probe: GetVolume -> {audio.GetVolume()}")
     except Exception as e:
-        log(f"WARN: GetVolume failed ({e}) — check Vui_Service version if audio is dead")
+        log(
+            f"WARN: GetVolume failed ({e}) — check Vui_Service version if audio is dead"
+        )
     player.set_volume(cfg.volume if cfg.volume is not None else DEFAULT_VOLUME)
 
     latest = {"remote": None, "t": 0.0}
@@ -133,8 +142,10 @@ def main() -> None:
     sub.Init(on_lowstate, 10)
 
     engine = ButtonEngine(cfg.mapping, cfg.cooldown, cfg.grace)
-    log(f"ready — {len(cfg.mapping)} button(s), cooldown {cfg.cooldown}s, "
-        f"grace {cfg.grace}s, config {args.config}")
+    log(
+        f"ready — {len(cfg.mapping)} button(s), cooldown {cfg.cooldown}s, "
+        f"grace {cfg.grace}s, config {args.config}"
+    )
 
     start_t = time.monotonic()
     got_first = False
@@ -154,10 +165,14 @@ def main() -> None:
                 config_mtime = mtime
                 try:
                     new_cfg = load_config(args.config, REPO_ROOT)
-                    new_cache = {b: voice.load_pcm(REPO_ROOT / a["play"])
-                                 for b, a in new_cfg.mapping.items() if "play" in a}
-                    engine = ButtonEngine(new_cfg.mapping, new_cfg.cooldown,
-                                          new_cfg.grace).carry_from(engine)
+                    new_cache = {
+                        b: voice.load_pcm(REPO_ROOT / a["play"])
+                        for b, a in new_cfg.mapping.items()
+                        if "play" in a
+                    }
+                    engine = ButtonEngine(
+                        new_cfg.mapping, new_cfg.cooldown, new_cfg.grace
+                    ).carry_from(engine)
                     pcm_cache = new_cache
                     if new_cfg.volume is not None and new_cfg.volume != cfg.volume:
                         player.set_volume(new_cfg.volume)
@@ -173,8 +188,10 @@ def main() -> None:
         # lowstate watchdog: never-arrived vs stopped
         if latest["t"] == 0.0:
             if now >= next_nodata_warn:
-                log(f"WARN: no lowstate data after {now - start_t:.0f}s — "
-                    f"check network interface ({args.iface}?), DDS, robot power")
+                log(
+                    f"WARN: no lowstate data after {now - start_t:.0f}s — "
+                    f"check network interface ({args.iface}?), DDS, robot power"
+                )
                 next_nodata_warn = now + 5.0
             continue
         if not got_first:
@@ -182,14 +199,16 @@ def main() -> None:
             log("lowstate stream OK")
         if now - latest["t"] > HEARTBEAT_TIMEOUT:
             if not warned_hb:
-                log(f"WARN: lowstate stopped ({HEARTBEAT_TIMEOUT:.0f}s silence) — "
-                    f"network/DDS/robot issue (NOT the remote; remote-off is a physical check)")
+                log(
+                    f"WARN: lowstate stopped ({HEARTBEAT_TIMEOUT:.0f}s silence) — "
+                    f"network/DDS/robot issue (NOT the remote; remote-off is a physical check)"
+                )
                 warned_hb = True
             continue
         warned_hb = False
 
         keys = parse_keys(latest["remote"])
-        if not primed:                       # never fire buttons held at startup
+        if not primed:  # never fire buttons held at startup
             engine.prime(keys)
             primed = True
             continue
@@ -213,8 +232,12 @@ def main() -> None:
                     # shell=True is intentional: buttons.json is the operator's
                     # scripting surface, editable only by users who already have
                     # an SSH shell on this machine — no privilege is added.
-                    subprocess.Popen(action["cmd"], shell=True,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.Popen(
+                        action["cmd"],
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
                 except Exception as e:
                     log(f"ERROR cmd: {e}")
 

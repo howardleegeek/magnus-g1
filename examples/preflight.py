@@ -26,34 +26,50 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actions", action="store_true",
-                        help="dump arm action names from the installed SDK")
+    parser.add_argument(
+        "--actions",
+        action="store_true",
+        help="dump arm action names from the installed SDK",
+    )
     args = parser.parse_args()
 
     # 1. Robot reachable
     ping = shutil.which("ping")
     if ping:
-        r = subprocess.run([ping, "-c", "2", "-W", "2", ROBOT_IP],
-                           capture_output=True, text=True)
-        check(f"robot reachable at {ROBOT_IP}", r.returncode == 0,
-              "check Ethernet link + laptop static IP 192.168.123.x" if r.returncode else "")
+        r = subprocess.run(
+            [ping, "-c", "2", "-W", "2", ROBOT_IP], capture_output=True, text=True
+        )
+        check(
+            f"robot reachable at {ROBOT_IP}",
+            r.returncode == 0,
+            (
+                "check Ethernet link + laptop static IP 192.168.123.x"
+                if r.returncode
+                else ""
+            ),
+        )
     else:
         check("ping available", False, "no ping binary on PATH")
 
     # 2. SDK importable
     try:
         import unitree_sdk2py  # noqa: F401
+
         check("unitree_sdk2py installed", True)
         sdk_ok = True
     except ImportError as e:
-        check("unitree_sdk2py installed", False,
-              f"{e} — pip install -e <path-to>/unitree_sdk2_python")
+        check(
+            "unitree_sdk2py installed",
+            False,
+            f"{e} — pip install -e <path-to>/unitree_sdk2_python",
+        )
         sdk_ok = False
 
     # 3. Arm action map loads (and optionally dump it)
     if sdk_ok:
         try:
             from unitree_sdk2py.g1.arm.g1_arm_action_client import action_map
+
             check("arm action_map loads", True, f"{len(action_map)} actions")
             if args.actions:
                 for name in sorted(action_map):

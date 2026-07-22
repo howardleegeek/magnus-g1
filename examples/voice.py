@@ -36,7 +36,8 @@ def load_pcm(path) -> bytes:
             if (rate, ch, width) != (16000, 1, 2):
                 sys.exit(
                     f"{path}: needs 16000 Hz mono 16-bit, got {rate} Hz / {ch} ch / {8*width}-bit\n"
-                    f"fix:  ffmpeg -i {path} -ar 16000 -ac 1 -sample_fmt s16 {path.stem}_fixed.wav")
+                    f"fix:  ffmpeg -i {path} -ar 16000 -ac 1 -sample_fmt s16 {path.stem}_fixed.wav"
+                )
             return w.readframes(w.getnframes())
     except (OSError, EOFError, wave.Error) as e:
         sys.exit(f"cannot read {path}: {e}")
@@ -47,7 +48,7 @@ def stream_wav(client, pcm: bytes) -> None:
     stream_id = str(int(time.time() * 1000))
     chunks = (len(pcm) + CHUNK - 1) // CHUNK
     for off in range(0, len(pcm), CHUNK):
-        ret = client.PlayStream(APP, stream_id, pcm[off:off + CHUNK])
+        ret = client.PlayStream(APP, stream_id, pcm[off : off + CHUNK])
         code = ret[0] if isinstance(ret, tuple) else ret
         if code:  # don't keep feeding a dead RPC for the clip's whole duration
             print(f"PlayStream error code {code} — aborting stream")
@@ -66,19 +67,27 @@ def main() -> None:
     parser.add_argument("--check", type=Path, help="validate a WAV offline and exit")
     parser.add_argument("--play", type=Path, help="stream a WAV to the robot speaker")
     parser.add_argument("--tts", help="speak text via the robot's built-in TTS")
-    parser.add_argument("--speaker", type=int, default=1,
-                        help="built-in TTS voice: 1=English (default), 0=Chinese")
+    parser.add_argument(
+        "--speaker",
+        type=int,
+        default=1,
+        help="built-in TTS voice: 1=English (default), 0=Chinese",
+    )
     parser.add_argument("--volume", type=int, help="set speaker volume 0-100")
     parser.add_argument("--stop", action="store_true", help="stop any playing audio")
     args = parser.parse_args()
 
     if args.check:
         pcm = load_pcm(args.check)
-        print(f"OK: {args.check} — {len(pcm) / BYTES_PER_SEC:.1f}s, "
-              f"{'1 chunk (routine-safe)' if len(pcm) <= CHUNK else f'{len(pcm) // CHUNK + 1} chunks (standalone play only)'}")
+        print(
+            f"OK: {args.check} — {len(pcm) / BYTES_PER_SEC:.1f}s, "
+            f"{'1 chunk (routine-safe)' if len(pcm) <= CHUNK else f'{len(pcm) // CHUNK + 1} chunks (standalone play only)'}"
+        )
         return
     if not args.iface:
-        parser.error("network interface required (or use --check for offline validation)")
+        parser.error(
+            "network interface required (or use --check for offline validation)"
+        )
     if not (args.play or args.tts or args.volume is not None or args.stop):
         parser.error("nothing to do: pass --play/--tts/--volume/--stop")
 
