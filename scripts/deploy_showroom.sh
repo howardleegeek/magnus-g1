@@ -23,7 +23,7 @@ else
 fi
 
 step "B. mpg123 fallback player (best-effort — Jetson may lack internet)"
-run ssh "$PC2" 'command -v mpg123 >/dev/null && echo "mpg123 already installed" || \
+run ssh -t "$PC2" 'command -v mpg123 >/dev/null && echo "mpg123 already installed" || \
     { sudo apt-get -y install mpg123 2>/dev/null && echo "mpg123 installed" || \
       echo "WARN: no internet on Jetson — skipping mpg123 (AudioClient path still works)"; }'
 
@@ -33,7 +33,7 @@ run ssh "$PC2" 'cd magnus && IFACE=$(ip -o -4 addr show | awk "\$4 ~ /192\.168\.
     ./venv/bin/python magnus-g1/examples/voice.py "$IFACE" --play magnus-g1/voices/showroom_welcome.wav'
 
 step "D. install + start the button service (survives reboots, auto-restarts)"
-run ssh "$PC2" 'sudo cp /home/unitree/magnus/magnus-g1/deploy/magnus-buttons.service /etc/systemd/system/ && \
+run ssh -t "$PC2" 'sudo cp /home/unitree/magnus/magnus-g1/deploy/magnus-buttons.service /etc/systemd/system/ && \
     sudo systemctl daemon-reload && sudo systemctl enable magnus-buttons && \
     sudo systemctl restart magnus-buttons && sleep 2 && \
     sudo systemctl is-active magnus-buttons && \

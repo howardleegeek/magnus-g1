@@ -44,6 +44,9 @@ choices; test any new binding for double-meaning before the customer sees it.
 - **Watch it live:** `ssh unitree@192.168.123.164 "sudo journalctl -u magnus-buttons -f"`
 - **Change a binding on site, no laptop repo needed:** edit
   `/home/unitree/magnus/magnus-g1/routines/buttons.json` on the Jetson → auto-reload.
+  ⚠️ On-site edits are TEMPORARY: the next `deploy_showroom.sh` rsync will
+  overwrite them. Make anything permanent in the git repo (or scp the edited
+  file back and commit) the same day.
 - **New/changed voice line:** edit `voices/lines.txt` → `./scripts/build_voices.sh`
   → re-run `deploy_showroom.sh` (rsync is incremental, seconds).
 - **WiFi so future visits are cable-free** (from Calvin's guide, optional):
