@@ -23,4 +23,4 @@ heart.wav        | This one's for you.
 outro.wav        | Thank you! Magnus Labs — robotics, deployed. | 230
 
 # the showroom deployment (button-triggered, standalone play — no 3s limit)
-showroom_welcome.wav | Welcome to Sofa showroom. Enjoy exploring our new outdoor collection.
+showroom_welcome.wav | Welcome to the showroom the booth, located in Building B, 7th floor. Enjoy exploring our new outdoor collection.
