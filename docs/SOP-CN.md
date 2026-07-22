@@ -2,7 +2,8 @@
 
 > 代码仓库：github.com/howardleegeek/magnus-g1（私有，需 Howard 邀请你的 GitHub 账号）
 > 效果：机器人自己开口说英文台词 + 完成 28 秒手臂舞蹈；最终可以装进机器人内部，脱离电脑演示。
-> 任何时刻出问题：按遥控器的 **阻尼模式（damping）** = 急停，机器人立刻瘫软。
+> 任何时刻出问题：按遥控器的 **阻尼模式（damping）组合键** = 急停，机器人立刻瘫软。
+> ⚠️ 组合键随固件版本不同：V1.0.2 = L1+A，V1.0.4 = L2+B——开工前先在宇树 App 查固件版本确认并写下来。
 
 ---
 
@@ -23,9 +24,12 @@
 git clone https://github.com/howardleegeek/magnus-g1.git
 cd magnus-g1
 python3 -m venv .venv && source .venv/bin/activate
+pip install pytest
+python -m pytest tests/ -q        # 期望 41 passed（这一步不需要 SDK、不需要机器人）
+
+# 然后再装 SDK（连机器人时才用得到；Mac 上如果报 cyclonedds 错误见文末 FAQ，不影响上面的测试）
 git clone https://github.com/unitreerobotics/unitree_sdk2_python
-pip install -e unitree_sdk2_python pytest
-python -m pytest tests/ -q
+pip install -e unitree_sdk2_python
 ```
 
 **✅ 完成标准：最后一条命令输出 `41 passed`。** 没有这个结果就是没装好
@@ -84,11 +88,33 @@ python examples/arm_dance.py <网卡名>
 ./scripts/install_onboard.sh
 ```
 
+首次运行会要求输入机器人内部电脑的密码（默认 `123`），只需输一次，之后自动免密。
+装完后**务必改掉默认密码**：`ssh unitree@192.168.123.164` → 输入 `passwd` 设新密码并记下来
+（G1 有公开的安全漏洞 + 人人皆知的默认密码，展厅环境绝不能留）。
+
 脚本自动完成：检查连接 → 把代码和语音文件推进机器人内部电脑 →
 在机器人里面安装 → 在机器人里面跑同一套 41 项测试 →
 **最后机器人自己开口说 "Hello! I'm the Magnus robot."** —— 听到这句 = 安装成功。
 
 之后更新台词/舞蹈：改完文件重新跑一次这个脚本即可（增量同步，几秒钟）。
+
+---
+
+## 四、展厅按键部署（按 RB 键 → 播欢迎语，不需要电脑）
+
+这是给客户展厅的正式功能（the showroom 项目）。做完第二步后，一条命令：
+
+```bash
+./scripts/deploy_showroom.sh
+```
+
+脚本自动完成：装进机器人（含第三步全部内容）→ 自动识别机器人内部网卡 →
+试播欢迎语（你会听到）→ 安装**开机自启**的按键服务 → 最后提示你按一下 RB 键，
+它去机器人日志里核实真的播了，屏幕打出 **PASS** 才算完成。
+
+装好后：按 RB = 播欢迎语，断电重启不丢，不需要任何电脑。
+改按键绑定：编辑 `routines/buttons.json`（机器人上或仓库里），保存后 1 秒自动生效。
+现场运维细节（员工卡片/开关店清单/排错表）见 `docs/SHOWROOM-DEPLOY.md` 和 `docs/TOMORROW-CN.md`。
 
 ---
 
@@ -109,5 +135,7 @@ python examples/arm_dance.py <网卡名>
   README 源码编译，或直接换 Ubuntu 电脑（推荐）。
 - **ping 不通** → 检查网线两头是否插紧、IP 是否设在**转接头网卡**上（不是 Wi-Fi）。
 - **说话是中文不是英文** → 把 `routines/demo.json` 里 `tts_speaker` 改成另一个值（0/1 互换）。
-- **想改台词** → 改 `voices/lines.txt` 一行文字，跑 `./scripts/build_voices.sh`，
-  再跑一次第三步的安装脚本同步进机器人。
+- **想改台词** → 改 `voices/lines.txt` 里那一行后，**必须**跑
+  `./scripts/build_voices.sh --force <文件名.wav>`（脚本默认跳过已存在的文件，
+  不加 --force 机器人会一直说旧台词且无任何报错）；**新增**台词才可直接跑
+  `./scripts/build_voices.sh`。然后重跑一次安装脚本同步进机器人。

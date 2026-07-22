@@ -71,7 +71,7 @@ cd magnus-g1 && source .venv/bin/activate
 
 14. ☐ Operator holds remote. Confirm 3 m radius clear. Robot standing.
 15. ☐ `python examples/arm_dance.py <iface>`
-    - ✅ Expect: voice line fires, then ~26 s of arm moves ending with arms released.
+    - ✅ Expect: voice line fires, then ~28 s of arm moves ending with arms released.
 16. ☐ Run it **3× total**. All clean = **Gate 1 PASSED — demo-capable robot.**
 17. ☐ Film the 3rd run (landscape).
 

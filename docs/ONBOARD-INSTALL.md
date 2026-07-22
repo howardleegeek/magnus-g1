@@ -42,8 +42,12 @@ From the laptop (repo root). PC2 usually has no internet access, so we push
 everything rather than git-clone:
 
 ```bash
-rsync -av --exclude .venv --exclude .git ./ unitree@192.168.123.164:~/magnus/magnus-g1/
-rsync -av ../unitree_sdk2_python/ unitree@192.168.123.164:~/magnus/unitree_sdk2_python/
+ssh unitree@192.168.123.164 'mkdir -p magnus'
+rsync -a --delete --exclude .git --exclude .venv --exclude __pycache__ --exclude unitree_sdk2_python \
+    ./ unitree@192.168.123.164:magnus/magnus-g1/
+# SDK may live at ../unitree_sdk2_python OR ./unitree_sdk2_python — rsync whichever exists:
+rsync -a --delete --exclude .git ../unitree_sdk2_python/ unitree@192.168.123.164:magnus/unitree_sdk2_python/
+rsync -a deploy/wheels/ unitree@192.168.123.164:magnus/wheels/   # offline pytest wheelhouse
 ```
 
 Re-running the same two commands later = how you "update the robot" (new
@@ -54,9 +58,14 @@ routines, new voice WAVs). The `voices/` folder is now physically inside the G1.
 ```bash
 ssh unitree@192.168.123.164
 cd ~/magnus
-python3 -m venv venv && source venv/bin/activate
-pip install -e ./unitree_sdk2_python pytest    # no internet? see note below
-python -m pytest magnus-g1/tests/ -q           # expect: 41 passed — same gate as everywhere
+python3 -m venv --system-site-packages venv && source venv/bin/activate
+# --system-site-packages is REQUIRED: it lets the venv see the Jetson's
+# factory-installed unitree_sdk2py (cyclonedds has no aarch64 wheel, so a bare
+# venv cannot pip-install the SDK offline).
+python -c "import unitree_sdk2py" 2>/dev/null && echo "SDK already visible — skip SDK install" \
+    || pip install -e ./unitree_sdk2_python          # only if not factory-installed (needs internet)
+pip install --no-index --find-links ./wheels pytest  # offline, from the shipped wheelhouse
+python -m pytest magnus-g1/tests/ -q                 # expect: 41 passed — same gate as everywhere
 ```
 
 > No-internet note: if pip can't download build deps, run `pip download` for

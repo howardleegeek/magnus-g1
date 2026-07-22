@@ -35,6 +35,7 @@ run ssh "$PC2" "cd magnus && \
 step "D. install + start the button service (detected iface baked in; survives reboots)"
 run ssh -t "$PC2" "sed 's/button_trigger.py eth0/button_trigger.py $IFACE/' \
         /home/unitree/magnus/magnus-g1/deploy/magnus-buttons.service | sudo tee /etc/systemd/system/magnus-buttons.service >/dev/null && \
+    sudo usermod -aG systemd-journal unitree 2>/dev/null; \
     sudo systemctl daemon-reload && sudo systemctl enable magnus-buttons && \
     sudo systemctl restart magnus-buttons && sleep 2 && sudo systemctl is-active magnus-buttons && \
     sleep 8 && sudo systemctl is-active magnus-buttons && \
@@ -47,10 +48,13 @@ else
     printf '\n>>> Press RB on the wireless controller NOW, wait for the welcome line to finish,\n'
     printf '>>> then press ENTER here to verify...\n'
     read -r
-    if ssh "$PC2" "journalctl -u magnus-buttons -S -120s --no-pager 2>/dev/null || sudo journalctl -u magnus-buttons -S -120s --no-pager" | grep -E "R1 → play|→ play"; then
+    if ssh -t "$PC2" "journalctl -u magnus-buttons -S -120s --no-pager 2>/dev/null || sudo journalctl -u magnus-buttons -S -120s --no-pager" | grep -E "R1 → play|→ play"; then
         printf '\nPASS — the daemon saw the press and played the welcome file.\n'
     else
-        printf '\nFAIL — no play event in the service log. Run with --debug per SHOWROOM-DEPLOY.md troubleshooting.\n'
+        printf '\nFAIL — no play event in the service log. Debug (exact commands):\n'
+        printf '  ssh %s "sudo systemctl stop magnus-buttons"\n' "$PC2"
+        printf '  ssh -t %s "cd magnus && ./venv/bin/python magnus-g1/examples/button_trigger.py %s --debug"\n' "$PC2" "$IFACE"
+        printf '  (press RB — --debug prints every key change; Ctrl-C, then: sudo systemctl start magnus-buttons)\n'
         exit 1
     fi
 fi
@@ -59,4 +63,5 @@ printf '\nDeployed. Ops:\n'
 printf '  logs:    ssh %s "sudo journalctl -u magnus-buttons -f"\n' "$PC2"
 printf '  rebind:  edit routines/buttons.json on the robot — hot-reloads in ~1s\n'
 printf '           (on-site edits are TEMPORARY: commit to git or the next deploy overwrites)\n'
-printf '  voices:  edit voices/lines.txt -> scripts/build_voices.sh -> re-run this script\n'
+printf '  voices:  NEW line: scripts/build_voices.sh · CHANGED line: scripts/build_voices.sh --force <name.wav>\n'
+printf '           (existing files are skipped without --force!) then re-run this script\n'

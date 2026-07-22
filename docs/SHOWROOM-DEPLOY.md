@@ -9,8 +9,12 @@ adversarially verified (multi-agent review, 2026-07-20 night).
 ## Night-before gate (done at the desk — no robot)
 
 - [ ] `python -m pytest tests/ -q` → all pass
-- [ ] `./scripts/deploy_showroom.sh --dry-run` → full A–E plan prints, **no FAIL lines**
-  (this catches the missing-SDK trap: it must print `SDK source: ...`)
+- [ ] `./scripts/deploy_showroom.sh --dry-run` → full A–E plan prints AND it shows
+  `SDK source: ...` (the missing-SDK trap). At the desk, the note
+  `robot ... unreachable (fine for dry-run)` is EXPECTED — only lines starting
+  with `FAIL:` are failures.
+- [ ] Plan B gate: `.venv/bin/python -c "import unitree_sdk2py"` succeeds
+  (passing tests does NOT prove the SDK is installed — tests are SDK-free by design)
 - [ ] Laptop, Ethernet cable, USB-C adapter, charged remote, phone with app
 - [ ] Print/save this doc's **Staff card** and **Open/Close checklist** sections
 
@@ -104,8 +108,10 @@ record the result in LOG.md either way.
 - Logs: `ssh unitree@192.168.123.164 "sudo journalctl -u magnus-buttons -f"`
 - Rebind on site: edit `~/magnus/magnus-g1/routines/buttons.json` on the Jetson
   → hot-reload. ⚠️ TEMPORARY — commit to git same-day or the next deploy overwrites.
-- New/changed voice line: `voices/lines.txt` → `./scripts/build_voices.sh` →
-  re-run `deploy_showroom.sh` (incremental, seconds).
+- NEW voice line: add to `voices/lines.txt` → `./scripts/build_voices.sh`.
+  CHANGED line: `./scripts/build_voices.sh --force <name.wav>` — the builder
+  SKIPS existing files by default, so without --force the robot silently keeps
+  speaking the old text. Then re-run `deploy_showroom.sh` (incremental, seconds).
 - Wi-Fi for cable-free visits: `sudo nmcli device wifi connect "SSID" password "PASS"`.
 
 ## Fleet rollout (3-robot order) — queued

@@ -34,10 +34,14 @@ python examples/arm_dance.py --dry-run
 Voice pack: generate any missing WAVs per `voices/lines.txt` header, then:
 
 ```bash
-python examples/voice.py --check voices/intro.wav   # every file: "routine-safe"
+python examples/voice.py --check voices/intro.wav
 ```
 
-**GATE A:** tests green + dry-run OK + all voice files check clean, on the session laptop itself.
+Routine clips (intro/clap_along/heart/outro) must report "1 chunk (routine-safe)".
+`showroom_welcome.wav` reporting "standalone play only" is EXPECTED — it is
+button-triggered standalone audio, not a dance-routine clip.
+
+**GATE A:** tests green + dry-run OK + all voice files check clean per the rules above, on the session laptop itself.
 
 ---
 
