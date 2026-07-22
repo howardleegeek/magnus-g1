@@ -2,77 +2,131 @@
 
 **Customer ask:** press **RB** on the wireless controller → robot plays
 "Welcome to Sofa showroom. Enjoy exploring our new outdoor collection."
-**Origin:** Calvin's forwarded `setup_voice_trigger.md` (2026-07-20). This stack
-implements it production-grade: debounced, tested, config-driven, systemd-run.
+**Origin:** Calvin's `setup_voice_trigger.md` (2026-07-20), rebuilt production-grade:
+debounced + combo-safe, tested (41 tests), config-driven, systemd-run, and
+adversarially verified (multi-agent review, 2026-07-20 night).
 
-## The one command (tomorrow, at the robot)
+## Night-before gate (done at the desk — no robot)
 
-Prereqs: checklist Parts 1–2 done (robot standing, e-stop tested, cable in neck
-RJ45, laptop IP `192.168.123.222`). Then:
+- [ ] `python -m pytest tests/ -q` → all pass
+- [ ] `./scripts/deploy_showroom.sh --dry-run` → full A–E plan prints, **no FAIL lines**
+  (this catches the missing-SDK trap: it must print `SDK source: ...`)
+- [ ] Laptop, Ethernet cable, USB-C adapter, charged remote, phone with app
+- [ ] Print/save this doc's **Staff card** and **Open/Close checklist** sections
+
+## The one command (at the robot)
+
+Prereqs: robot standing, e-stop tested, cable in neck RJ45, laptop IP `192.168.123.222`.
 
 ```bash
-./scripts/deploy_showroom.sh        # --dry-run to preview first
+./scripts/deploy_showroom.sh
 ```
 
-Steps it runs: onboard install (repo+SDK+voices → Jetson, tests pass inside)
-→ mpg123 fallback (best-effort) → speaker check (you HEAR the welcome line)
-→ `magnus-buttons` systemd service enabled + started → live RB test.
-**Success = press RB, robot speaks. Service survives reboots and auto-restarts.**
+Steps: onboard install (repo+SDK+voices+offline wheelhouse → Jetson, tests run
+*inside* the robot) → interface auto-detected (eth0 vs eth1 varies by unit) →
+speaker check (you HEAR the welcome) → `magnus-buttons` service installed with
+the detected interface baked in → **gated live test**: press RB, script greps
+the service journal for the play event and prints PASS/FAIL. Exit 0 = deployed.
+
+**During install, also do once:** `ssh unitree@192.168.123.164 passwd` — change
+the default password (`123`). G1s have a publicly documented BLE root exploit
+(UniPwn) and known default creds; a public showroom is a hostile RF environment.
+
+## Network map (never guess IPs on site)
+
+| IP | What | Rule |
+|---|---|---|
+| 192.168.123.161 | Motion-control computer (PC1) | **Never touch, never SSH** |
+| 192.168.123.164 | Jetson dev computer (PC2) | Our stack lives here, `~/magnus` only |
+| 192.168.123.120/.20 | LiDAR (varies) | Leave alone |
+| 192.168.123.222 | Your laptop (static) | — |
+
+On PC2: **never kill or disable `master_service` / `vui_service`** (vui IS our
+audio path) and never ServiceSwitch off `ai_sport`. Before any manual
+`button_trigger.py` run: `systemctl status magnus-buttons` first — **never
+double-launch** (two daemons = double audio + fighting logs).
 
 ## What Calvin asked vs what shipped
 
 | Ask | Shipped |
 |---|---|
-| Error handling | Every action wrapped; bad config rejected at load AND on hot-reload (old config keeps running); audio errors can't kill the daemon; heartbeat warns if the remote goes silent |
-| Debouncing | Press-EDGE detection (holding ≠ repeat) + per-button cooldown (default 1.5 s) + busy-guard (presses during playback ignored & logged) |
-| "Program any script on the fly" | `routines/buttons.json`: any button → `play` (WAV) / `tts` (built-in voice) / `cmd` (any shell command). Edit or rsync the file — **hot-reloads in ~1 s, no restart** |
-| ChatGPT chat (bonus) | Follow-up — needs a mic check on the Jetson first (`arecord -l`); design sketch at the bottom |
+| Error handling | Every action wrapped; ANY bad config (wrong types, NaN, arrays) rejected at load AND hot-reload with the old config kept running; audio errors can't kill the daemon; lowstate watchdog (never-arrived AND stopped cases) |
+| Debouncing | Press-edge only + per-button cooldown (1.5 s) + **solo-grace guard**: a button fires only if held ALONE for 150 ms — the robot's own two-key combos (L1+A damping, R1+X motion, L2+R2 debug) can never trigger our audio. Busy-guard covers WAV **and** TTS duration |
+| "Program any script on the fly" | `routines/buttons.json`: any button → `play`/`tts`/`cmd`. Edit or rsync → hot-reload in ~1 s, no restart, no re-fire of held buttons |
+| ChatGPT chat (bonus) | Deferred by evidence: PC2 mic capture is broken in the SDK (returns all-zero data, issue #143) — needs an `arecord -l` check on real hardware first. Design: separate non-blocking path that fails to a canned local line; the RB→WAV core must stay fully offline |
 
 ## Button map (current)
 
 | Button | Action |
 |---|---|
-| **RB** | Welcome line (customer's exact text, `voices/showroom_welcome.wav`) |
-| **LB** | TTS: "Hello! Thanks for visiting. Let me know if you'd like a tour." |
+| **RB** (alone, 150 ms) | Welcome line (`voices/showroom_welcome.wav`) |
+| **LB** (alone, 150 ms) | TTS greeting |
 
-All 16 buttons mappable: R1/RB L1/LB R2/RT L2/LT A B X Y arrows START SELECT F1 F2.
-⚠️ Some buttons have built-in robot functions in normal mode — RB/LB are safe
-choices; test any new binding for double-meaning before the customer sees it.
+`volume: 85` in buttons.json is asserted at daemon start and on every config
+reload — survives power cycles and the Jetson's documented random reboots.
 
-## Operations (after tomorrow)
+## ⚠️ Staff card (print, laminate, leave at the booth)
 
-- **Watch it live:** `ssh unitree@192.168.123.164 "sudo journalctl -u magnus-buttons -f"`
-- **Change a binding on site, no laptop repo needed:** edit
-  `/home/unitree/magnus/magnus-g1/routines/buttons.json` on the Jetson → auto-reload.
-  ⚠️ On-site edits are TEMPORARY: the next `deploy_showroom.sh` rsync will
-  overwrite them. Make anything permanent in the git repo (or scp the edited
-  file back and commit) the same day.
-- **New/changed voice line:** edit `voices/lines.txt` → `./scripts/build_voices.sh`
-  → re-run `deploy_showroom.sh` (rsync is incremental, seconds).
-- **WiFi so future visits are cable-free** (from Calvin's guide, optional):
-  `ssh` in via cable once → `sudo nmcli device wifi connect "SSID" password "PASS"`
-  → note `ip a | grep wlan` → next time SSH over WiFi, no cable.
-- **Service control:** `sudo systemctl {status|restart|stop|disable} magnus-buttons`
+1. **E-stop = damping combo on the remote — CHECK THE FIRMWARE VERSION in the
+   app and write the right combo here: V1.0.2 = L1+A · V1.0.4 = L2+B.**
+   Damping makes the robot COLLAPSE — keep 1.5–2 m clear, never trigger it
+   with a child inside the falling radius.
+2. **Never press L2+R2** (debug mode): motion control dies and only a full
+   reboot recovers. Symptom "remote seems dead" → suspect this → reboot robot.
+3. **No firmware/OTA updates** the night before or during demo days — updates
+   force joint recalibration, can change button combos, and have broken SDK apps.
+4. Robot's built-in voice assistant shares our speaker: keep the robot offline
+   or set the assistant to push-button mode so a visitor saying "Hello Robot"
+   can't talk over the welcome clip. L1+SELECT force-interrupts its speech.
+5. Robot stays behind the rope/plinth, ≥1 m standoff, signage up. Standing +
+   powered ONLY with staff line of sight (kids shove robots; a shove on a
+   balancing 35 kg humanoid is a fall).
 
-## Fleet note (3-robot order)
+## Open/Close checklist (staff, <2 min, no laptop) — assign a NAMED owner
 
-Per-robot deploy = same one command against each unit; the only per-robot state
-is `buttons.json` + WiFi config. Keep any customer-specific tweaks in git
-(branch or per-unit config file) — never hand-edit only on a robot.
+**Open:** power on → wait for stable stand (~5 min budget) → remote ON (it
+stays at the booth: it's the e-stop AND may be needed as keep-alive) → press
+RB once → hear welcome = GREEN → battery ≥30%.
+**Close:** power off per manual (short-press, then long-press >2 s) → remote
+on charger → leave battery near 60–70%.
+**Day rules:** stop demos at 10% battery; ~90-min battery rotation if swapping;
+rest the robot damped/seated between bursts (sustained standing overheats
+shoulder/hip actuators — the most common G1 hardware failure); charging only
+during staffed hours, in view.
 
-## Troubleshooting (merged: Calvin's guide + ours)
+**First-day soak test (15 min, tomorrow):** leave ONLY our service running and
+watch whether the G1's ~10-min idle auto-shutdown fires despite SDK traffic.
+If it powers off: the bound remote staying ON at the booth is the keep-alive —
+record the result in LOG.md either way.
+
+## Operations (remote)
+
+- Logs: `ssh unitree@192.168.123.164 "sudo journalctl -u magnus-buttons -f"`
+- Rebind on site: edit `~/magnus/magnus-g1/routines/buttons.json` on the Jetson
+  → hot-reload. ⚠️ TEMPORARY — commit to git same-day or the next deploy overwrites.
+- New/changed voice line: `voices/lines.txt` → `./scripts/build_voices.sh` →
+  re-run `deploy_showroom.sh` (incremental, seconds).
+- Wi-Fi for cable-free visits: `sudo nmcli device wifi connect "SSID" password "PASS"`.
+
+## Fleet rollout (3-robot order) — queued
+
+Same one command per unit (interface auto-detected per robot). Per-unit state =
+buttons.json + Wi-Fi, kept in git. Next upgrades, in order: (1) daily health
+ping from each Jetson to Telegram (service active, last RB press, **presses/day
+— the ROI number for the fleet order**); (2) nightly service-restart timer at
+closing time (crash-restart can't see "running but deaf" states); (3) robots on
+an isolated guest VLAN (UniPwn is wormable over BLE); (4) per-unit Vui_Service
+version check (≥2.0.3.8) before first audio deploy.
+
+## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| RB does nothing, no log line | Remote off/unpaired — daemon logs a heartbeat WARN after 10 s of silence |
-| RB logs "ignored, audio still playing" | By design (busy-guard); wait for clip end |
-| No sound, no errors | Volume: `voice.py <iface> --volume 85`; then `aplay -l` on Jetson — if "no soundcards", use AudioClient path only (already the default) |
-| Service restart-looping | `journalctl -u magnus-buttons -n 50`; usual causes: wrong iface in the unit file (check `ip a` on Jetson) or SDK not installed in venv |
-| Config edit didn't take | It was invalid — daemon logs `BAD CONFIG kept old mapping`; fix the JSON |
-
-## ChatGPT-chat bonus (design sketch, not built)
-
-Mic (`arecord`) → push-to-talk button in buttons.json (`cmd` → record 5 s)
-→ Whisper/GPT API (needs Jetson internet or laptop relay) → reply via
-`voice.py --tts`. Decision needed: API key handling + internet path on the
-Jetson. Estimate: one desk day + one robot hour, after tomorrow's install.
+| RB does nothing, no log line | **Remote-off is NOT detectable in logs** (lowstate flows regardless) — check the remote is ON, charged, bound (DL indicator). Then `--debug` run shows every key change |
+| Log shows `WARN: no lowstate data` repeating | Wrong interface / DDS / robot off — re-run deploy (it re-detects the interface) |
+| RB logs "ignored, audio still playing" | By design (busy-guard, now covers TTS too) |
+| Welcome fires when operator uses remote combos | Should be impossible (solo-grace guard) — if seen, capture `--debug` log and file it |
+| No sound, no errors | `GetVolume` probe line in startup log tells you if the audio service is dead (old Vui_Service) vs volume zero |
+| Remote totally unresponsive | Suspect accidental L2+R2 debug mode → reboot robot |
+| Service restart-looping | `journalctl -u magnus-buttons -n 50`; PC1 services take ~1 min after power-on — StartLimitIntervalSec=0 means it keeps retrying by design |
+| Config edit didn't take | It was invalid — log shows `BAD CONFIG kept old mapping: <reason>` |

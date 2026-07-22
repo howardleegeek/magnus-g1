@@ -9,7 +9,7 @@ see something else, stop and check the Troubleshooting line, don't improvise.
 
 ## ☐ Bring (check before leaving your desk)
 
-- ☐ Laptop with setup DONE: `python -m pytest tests/ -q` → **24 passed** (if not: docs/SETUP.md first)
+- ☐ Laptop with setup DONE: `python -m pytest tests/ -q` → **41 passed** (if not: docs/SETUP.md first)
 - ☐ Ethernet cable (normal RJ45 network cable)
 - ☐ USB-C → Ethernet adapter (MacBooks have no RJ45 port)
 - ☐ Remote controller, charged

@@ -20,7 +20,7 @@ Magnus Labs — Unitree **G1 EDU** programming workspace. Control code, dance/de
 ### Setup (dev laptop)
 
 > Team members: follow [docs/SETUP.md](docs/SETUP.md) — full self-serve install
-> with troubleshooting. Done when `pytest` prints 24 passed.
+> with troubleshooting. Done when `pytest` prints 41 passed.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate

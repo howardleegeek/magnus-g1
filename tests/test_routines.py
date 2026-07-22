@@ -112,6 +112,27 @@ def test_shipped_intro_wav_is_routine_safe():
     assert 0 < len(pcm) <= voice.CHUNK
 
 
+# ---- stream timing (regression: exact-multiple files lost their last second)
+
+class FakeAudioClient:
+    def __init__(self):
+        self.stopped = False
+    def PlayStream(self, app, sid, chunk):
+        return 0
+    def PlayStop(self, app):
+        self.stopped = True
+
+
+@pytest.mark.parametrize("nbytes", [voice.CHUNK, 2 * voice.CHUNK, voice.CHUNK + 1000])
+def test_stream_wav_waits_out_full_audio(monkeypatch, nbytes):
+    slept = []
+    monkeypatch.setattr(voice.time, "sleep", lambda s: slept.append(s))
+    client = FakeAudioClient()
+    voice.stream_wav(client, b"\x00" * nbytes)
+    assert client.stopped
+    assert sum(slept) >= nbytes / voice.BYTES_PER_SEC  # never PlayStop early
+
+
 # ---- CLI smoke ---------------------------------------------------------
 
 def test_dry_run_cli_exits_zero():

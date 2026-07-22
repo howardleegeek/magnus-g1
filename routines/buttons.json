@@ -1,6 +1,8 @@
 {
   "cooldown_sec": 1.5,
-  "comment": "Button -> action map for button_trigger.py. Edit + save (or rsync) and it hot-reloads in ~1s, no restart. Each action = exactly one of: play (WAV in repo), tts (built-in voice), cmd (shell). Buttons: R1/RB L1/LB R2/RT L2/LT A B X Y UP DOWN LEFT RIGHT START SELECT F1 F2.",
+  "combo_grace_sec": 0.15,
+  "volume": 85,
+  "comment": "Button -> action map for button_trigger.py. Edit + save (or rsync) and it hot-reloads in ~1s, no restart. Each action = exactly one of: play (WAV in repo), tts (built-in voice, single language per line), cmd (shell). Buttons: R1/RB L1/LB R2/RT L2/LT A B X Y UP DOWN LEFT RIGHT START SELECT F1 F2. A button only fires when pressed ALONE (combo_grace_sec guard) so robot system combos like L1+A never trigger actions. volume is asserted at daemon start and on reload.",
   "buttons": {
     "RB": { "play": "voices/showroom_welcome.wav" },
     "LB": { "tts": "Hello! Thanks for visiting. Let me know if you would like a tour." }

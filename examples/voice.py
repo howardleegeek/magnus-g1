@@ -45,12 +45,18 @@ def load_pcm(path) -> bytes:
 def stream_wav(client, pcm: bytes) -> None:
     """Send PCM in official-example cadence, wait for tail, then stop the stream."""
     stream_id = str(int(time.time() * 1000))
+    chunks = (len(pcm) + CHUNK - 1) // CHUNK
     for off in range(0, len(pcm), CHUNK):
-        client.PlayStream(APP, stream_id, pcm[off:off + CHUNK])
+        ret = client.PlayStream(APP, stream_id, pcm[off:off + CHUNK])
+        code = ret[0] if isinstance(ret, tuple) else ret
+        if code:  # don't keep feeding a dead RPC for the clip's whole duration
+            print(f"PlayStream error code {code} — aborting stream")
+            break
         time.sleep(CHUNK_SLEEP)
-    # chunks were paced 1 s apart but each holds ~3 s of audio — wait out the rest
-    remainder = len(pcm) / BYTES_PER_SEC - (len(pcm) // CHUNK + 1) * CHUNK_SLEEP
-    time.sleep(max(0.5, remainder))
+    # Chunks are paced 1 s apart but each holds ~3 s of audio — wait out the
+    # tail with margin so PlayStop never clips the final word (exact-multiple
+    # files previously lost their last second).
+    time.sleep(max(0.5, len(pcm) / BYTES_PER_SEC - chunks * CHUNK_SLEEP + 0.3))
     client.PlayStop(APP)
 
 

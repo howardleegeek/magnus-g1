@@ -56,7 +56,7 @@ ssh unitree@192.168.123.164
 cd ~/magnus
 python3 -m venv venv && source venv/bin/activate
 pip install -e ./unitree_sdk2_python pytest    # no internet? see note below
-python -m pytest magnus-g1/tests/ -q           # expect: 24 passed — same gate as everywhere
+python -m pytest magnus-g1/tests/ -q           # expect: 41 passed — same gate as everywhere
 ```
 
 > No-internet note: if pip can't download build deps, run `pip download` for

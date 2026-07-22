@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # PLUG-AND-PLAY showroom deploy: run this at the robot, walk away with RB working.
 #
-#   1. cable in neck RJ45, laptop IP 192.168.123.222 (checklist Part 1-2)
+#   1. cable in neck RJ45, laptop IP 192.168.123.222 (checklist Parts 1-2)
 #   2. ./scripts/deploy_showroom.sh          # or --dry-run to preview
 #
 # Does: onboard install (repo+SDK+voices into the Jetson) -> speaker verify ->
-# mpg123 fallback (best-effort) -> systemd service installed+started ->
-# live RB test prompt. Re-run anytime: every step is idempotent.
+# systemd service installed with the DETECTED interface + started -> gated live
+# RB test (checks the daemon's log actually fired). Re-run anytime: idempotent.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -16,33 +16,47 @@ step() { printf '\n=== %s\n' "$*"; }
 run()  { if [ "$DRY" = "--dry-run" ]; then echo "DRY: $*"; else "$@"; fi }
 
 step "A. base install into the robot (repo + SDK + voices + tests)"
+if [ "$DRY" = "--dry-run" ]; then ./scripts/install_onboard.sh --dry-run; else ./scripts/install_onboard.sh; fi
+
+step "B. detect the Jetson's robot-LAN interface (eth0 vs eth1 varies by unit)"
 if [ "$DRY" = "--dry-run" ]; then
-    ./scripts/install_onboard.sh --dry-run
+    IFACE="eth0"; echo "DRY: would detect via ip -o -4 addr show (assuming eth0)"
 else
-    ./scripts/install_onboard.sh
+    IFACE=$(ssh "$PC2" 'ip -o -4 addr show | awk "\$4 ~ /192\.168\.123/ {print \$2; exit}"')
+    [ -n "$IFACE" ] || { echo "FAIL: could not detect PC2 interface"; exit 1; }
+    echo "PC2 interface: $IFACE"
 fi
 
-step "B. mpg123 fallback player (best-effort — Jetson may lack internet)"
-run ssh -t "$PC2" 'command -v mpg123 >/dev/null && echo "mpg123 already installed" || \
-    { sudo apt-get -y install mpg123 2>/dev/null && echo "mpg123 installed" || \
-      echo "WARN: no internet on Jetson — skipping mpg123 (AudioClient path still works)"; }'
-
 step "C. speaker + welcome file verification (you should HEAR the welcome line)"
-run ssh "$PC2" 'cd magnus && IFACE=$(ip -o -4 addr show | awk "\$4 ~ /192\.168\.123/ {print \$2; exit}") && \
-    ./venv/bin/python magnus-g1/examples/voice.py "$IFACE" --volume 85 && \
-    ./venv/bin/python magnus-g1/examples/voice.py "$IFACE" --play magnus-g1/voices/showroom_welcome.wav'
+run ssh "$PC2" "cd magnus && \
+    ./venv/bin/python magnus-g1/examples/voice.py $IFACE --volume 85 && \
+    ./venv/bin/python magnus-g1/examples/voice.py $IFACE --play magnus-g1/voices/showroom_welcome.wav"
 
-step "D. install + start the button service (survives reboots, auto-restarts)"
-run ssh -t "$PC2" 'sudo cp /home/unitree/magnus/magnus-g1/deploy/magnus-buttons.service /etc/systemd/system/ && \
+step "D. install + start the button service (detected iface baked in; survives reboots)"
+run ssh -t "$PC2" "sed 's/button_trigger.py eth0/button_trigger.py $IFACE/' \
+        /home/unitree/magnus/magnus-g1/deploy/magnus-buttons.service | sudo tee /etc/systemd/system/magnus-buttons.service >/dev/null && \
     sudo systemctl daemon-reload && sudo systemctl enable magnus-buttons && \
-    sudo systemctl restart magnus-buttons && sleep 2 && \
-    sudo systemctl is-active magnus-buttons && \
-    sudo journalctl -u magnus-buttons -n 5 --no-pager'
+    sudo systemctl restart magnus-buttons && sleep 2 && sudo systemctl is-active magnus-buttons && \
+    sleep 8 && sudo systemctl is-active magnus-buttons && \
+    sudo journalctl -u magnus-buttons -n 6 --no-pager"
 
-step "E. LIVE TEST"
-printf '\n>>> Press RB on the wireless controller NOW.\n'
-printf '>>> Expected: robot says the welcome line. Press again during playback: ignored (by design).\n'
-printf '>>> Watch logs:   ssh %s "sudo journalctl -u magnus-buttons -f"\n' "$PC2"
-printf '>>> Change behavior later WITHOUT this laptop: edit routines/buttons.json on the\n'
-printf '>>> robot (or rsync it) — the service hot-reloads in ~1s. New voice lines: add to\n'
-printf '>>> voices/lines.txt, run scripts/build_voices.sh, re-run this script.\n'
+step "E. GATED LIVE TEST"
+if [ "$DRY" = "--dry-run" ]; then
+    echo "DRY: would prompt for an RB press, then verify a '→ play' line in the service journal"
+else
+    printf '\n>>> Press RB on the wireless controller NOW, wait for the welcome line to finish,\n'
+    printf '>>> then press ENTER here to verify...\n'
+    read -r
+    if ssh "$PC2" "journalctl -u magnus-buttons -S -120s --no-pager 2>/dev/null || sudo journalctl -u magnus-buttons -S -120s --no-pager" | grep -E "R1 → play|→ play"; then
+        printf '\nPASS — the daemon saw the press and played the welcome file.\n'
+    else
+        printf '\nFAIL — no play event in the service log. Run with --debug per SHOWROOM-DEPLOY.md troubleshooting.\n'
+        exit 1
+    fi
+fi
+
+printf '\nDeployed. Ops:\n'
+printf '  logs:    ssh %s "sudo journalctl -u magnus-buttons -f"\n' "$PC2"
+printf '  rebind:  edit routines/buttons.json on the robot — hot-reloads in ~1s\n'
+printf '           (on-site edits are TEMPORARY: commit to git or the next deploy overwrites)\n'
+printf '  voices:  edit voices/lines.txt -> scripts/build_voices.sh -> re-run this script\n'

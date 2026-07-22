@@ -2,9 +2,18 @@
 
 The G1's rt/lowstate messages carry the remote's raw packet in
 `wireless_remote` (40 bytes). Bytes 2-3 are a 16-bit button bitfield
-(xKeySwitchUnion in the official SDK headers). This module parses that field,
-validates the buttons.json config, and debounces presses: an action fires on
-the press EDGE (not while held) and never more than once per cooldown window.
+(xKeySwitchUnion; layout verified bit-for-bit against Unitree's official
+deploy code in unitree_rl_gym remote_controller.py). This module parses that
+field, validates buttons.json, and debounces presses.
+
+Firing rules (all must hold):
+  - press EDGE only (holding a button never re-fires)
+  - per-button cooldown window
+  - SOLO + GRACE: the button must be the ONLY key held, continuously, for
+    combo_grace_sec. The robot reserves many two-key combos (L1+A damping,
+    R1+X motion mode, L2+R2 debug...) — the grace window ensures an operator
+    entering a system combo never fires our action, even if the two keys
+    arrive a few samples apart.
 
 Kept SDK-free so the whole thing is unit-testable off-robot.
 """
@@ -12,8 +21,10 @@ Kept SDK-free so the whole thing is unit-testable off-robot.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 KEY_BITS = {
     "R1": 0, "L1": 1, "START": 2, "SELECT": 3,
@@ -26,8 +37,15 @@ ALIASES = {"RB": "R1", "LB": "L1", "RT": "R2", "LT": "L2"}
 VERBS = ("play", "cmd", "tts")   # exactly one per action
 
 
+class Config(NamedTuple):
+    cooldown: float
+    grace: float
+    volume: float | None
+    mapping: dict[str, dict]
+
+
 def canon(name: str) -> str:
-    up = name.upper()
+    up = str(name).upper()
     return ALIASES.get(up, up)
 
 
@@ -39,47 +57,98 @@ def parse_keys(wireless_remote) -> frozenset[str]:
     return frozenset(k for k, bit in KEY_BITS.items() if value >> bit & 1)
 
 
-def load_config(path: Path, repo_root: Path) -> tuple[float, dict[str, dict]]:
-    """Validate buttons.json. Returns (cooldown_sec, {canonical_button: action}).
+def load_config(path: Path, repo_root: Path) -> Config:
+    """Validate buttons.json.
 
-    Fails loudly (SystemExit) on unknown buttons, malformed actions, or missing
-    audio files — a bad config should never reach the robot silently.
+    EVERY malformed input — wrong types included, not just bad JSON — must exit
+    via the same SystemExit path, so the daemon's hot-reload can reject a bad
+    config and keep the old one running. Nothing here may raise anything else.
     """
     try:
         data = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"cannot load config {path}: {e}")
+        if not isinstance(data, dict):
+            raise TypeError("top level must be an object")
 
-    cooldown = float(data.get("cooldown_sec", 1.5))
-    mapping: dict[str, dict] = {}
-    for btn, action in data.get("buttons", {}).items():
-        b = canon(btn)
-        if b not in KEY_BITS:
-            sys.exit(f"unknown button '{btn}' — valid: {sorted(KEY_BITS)} "
-                     f"(aliases: {sorted(ALIASES)})")
-        if not isinstance(action, dict) or sum(v in action for v in VERBS) != 1:
-            sys.exit(f"button '{btn}': action must have exactly one of {VERBS}")
-        if "play" in action and not (repo_root / action["play"]).exists():
-            sys.exit(f"button '{btn}': audio file not found: {repo_root / action['play']}")
-        mapping[b] = action
-    if not mapping:
-        sys.exit(f"{path}: config has no buttons")
-    return cooldown, mapping
+        cooldown = float(data.get("cooldown_sec", 1.5))
+        if not math.isfinite(cooldown) or cooldown < 0:
+            raise ValueError(f"cooldown_sec must be a finite number >= 0, got {cooldown}")
+
+        grace = float(data.get("combo_grace_sec", 0.15))
+        if not math.isfinite(grace) or not 0 <= grace <= 2:
+            raise ValueError(f"combo_grace_sec must be 0-2, got {grace}")
+
+        volume = data.get("volume")
+        if volume is not None:
+            volume = float(volume)
+            if not math.isfinite(volume) or not 0 <= volume <= 100:
+                raise ValueError(f"volume must be 0-100, got {volume}")
+
+        buttons = data.get("buttons", {})
+        if not isinstance(buttons, dict):
+            raise TypeError("'buttons' must be an object")
+
+        mapping: dict[str, dict] = {}
+        for btn, action in buttons.items():
+            b = canon(btn)
+            if b not in KEY_BITS:
+                raise ValueError(f"unknown button '{btn}' — valid: {sorted(KEY_BITS)} "
+                                 f"(aliases: {sorted(ALIASES)})")
+            if not isinstance(action, dict) or sum(v in action for v in VERBS) != 1:
+                raise ValueError(f"button '{btn}': action must have exactly one of {VERBS}")
+            if "play" in action:
+                wav = repo_root / str(action["play"])
+                if not wav.exists():
+                    raise ValueError(f"button '{btn}': audio file not found: {wav}")
+            mapping[b] = action
+        if not mapping:
+            raise ValueError("config has no buttons")
+        return Config(cooldown, grace, volume, mapping)
+    except SystemExit:
+        raise
+    except BaseException as e:  # OSError, JSON, type errors — everything → one exit path
+        sys.exit(f"bad config {path}: {e}")
 
 
 class ButtonEngine:
-    """Edge detection + per-button cooldown. update() returns actions to fire."""
+    """Edge + solo-grace + cooldown state machine. update() returns actions to fire."""
 
-    def __init__(self, mapping: dict[str, dict], cooldown: float = 1.5):
+    def __init__(self, mapping: dict[str, dict], cooldown: float = 1.5,
+                 grace: float = 0.15):
         self.mapping = mapping
         self.cooldown = cooldown
+        self.grace = grace
         self._prev: frozenset[str] = frozenset()
+        self._pending: dict[str, float] = {}     # button -> edge time, awaiting grace
         self._last_fire: dict[str, float] = {}
 
+    def carry_from(self, old: "ButtonEngine") -> "ButtonEngine":
+        """Adopt held-key/cooldown state from the previous engine (hot-reload).
+
+        Without this, a button held across a reload counts as a fresh press
+        edge and re-fires, and all cooldown history is wiped.
+        """
+        self._prev = old._prev
+        self._last_fire = dict(old._last_fire)
+        return self
+
+    def prime(self, keys: frozenset[str]) -> None:
+        """Seed held-key state at startup so already-held buttons don't fire."""
+        self._prev = keys
+
     def update(self, keys: frozenset[str], now: float) -> list[tuple[str, dict]]:
+        # New solo press edges enter the grace queue.
+        for b in keys - self._prev:
+            if (b in self.mapping and keys == {b}
+                    and now - self._last_fire.get(b, float("-inf")) >= self.cooldown):
+                self._pending[b] = now
+        # A pending press is cancelled the moment it stops being a solo hold.
         fired = []
-        for b in keys - self._prev:                      # press edges only
-            if b in self.mapping and now - self._last_fire.get(b, float("-inf")) >= self.cooldown:
+        for b, t0 in list(self._pending.items()):
+            if keys != {b}:
+                del self._pending[b]
+                continue
+            if now - t0 >= self.grace:
+                del self._pending[b]
                 self._last_fire[b] = now
                 fired.append((b, self.mapping[b]))
         self._prev = keys

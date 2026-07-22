@@ -1,6 +1,6 @@
 # Team setup — install this stack on your machine
 
-Follow top to bottom. **You are done when Step 5 prints `24 passed`.** Nothing
+Follow top to bottom. **You are done when Step 5 prints `41 passed`.** Nothing
 here needs the robot — robot sessions are a separate procedure
 ([SOP-UNIT-BRINGUP.md](SOP-UNIT-BRINGUP.md)).
 
@@ -47,7 +47,7 @@ pip install -e unitree_sdk2_python
 ## Step 5 — Verify (the done-when gate)
 
 ```bash
-python -m pytest tests/ -q          # MUST print: 24 passed
+python -m pytest tests/ -q          # MUST print: 41 passed
 python examples/arm_dance.py --dry-run   # prints the demo timeline
 ```
 

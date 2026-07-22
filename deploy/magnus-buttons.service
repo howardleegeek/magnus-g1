@@ -1,6 +1,11 @@
 [Unit]
 Description=Magnus G1 showroom button trigger (RB -> welcome message)
-After=network.target
+# network-online + unlimited restarts: PC1's audio/motion services take ~1 min
+# after power-on; the Restart loop IS the wait-for-robot-ready mechanism, and
+# the default start-limit (5 in 10s) must never permanently fail the unit.
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 User=unitree
