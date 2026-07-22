@@ -109,23 +109,32 @@ def load_config(path: Path, repo_root: Path) -> Config:
                     f"unknown button '{btn}' — valid: {sorted(KEY_BITS)} "
                     f"(aliases: {sorted(ALIASES)})"
                 )
+            if b in mapping:
+                raise ValueError(
+                    f"button '{btn}' maps to '{b}' which is already configured "
+                    f"(an alias and its canonical name both point here)"
+                )
             if not isinstance(action, dict) or sum(v in action for v in VERBS) != 1:
                 raise ValueError(
                     f"button '{btn}': action must have exactly one of {VERBS}"
                 )
+            verb = next(v for v in VERBS if v in action)
+            if not isinstance(action[verb], str) or not action[verb].strip():
+                raise ValueError(
+                    f"button '{btn}': '{verb}' value must be a non-empty string, "
+                    f"got {action[verb]!r}"
+                )
             if "play" in action:
-                wav = repo_root / str(action["play"])
+                wav = repo_root / action["play"]
                 if not wav.exists():
                     raise ValueError(f"button '{btn}': audio file not found: {wav}")
             mapping[b] = action
         if not mapping:
             raise ValueError("config has no buttons")
         return Config(cooldown, grace, volume, mapping)
-    except SystemExit:
+    except (SystemExit, KeyboardInterrupt):
         raise
-    except (
-        BaseException
-    ) as e:  # OSError, JSON, type errors — everything → one exit path
+    except Exception as e:  # OSError, JSON, type errors — everything → one exit path
         sys.exit(f"bad config {path}: {e}")
 
 

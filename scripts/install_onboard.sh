@@ -62,8 +62,9 @@ run ssh "$PC2" 'set -o pipefail; cd magnus && { [ -d venv ] || python3 -m venv -
         ./venv/bin/pip -q install -e ./unitree_sdk2_python 2>&1 | tail -3 || \
         echo "WARN: SDK pip install failed (no internet / cyclonedds build?) — see ONBOARD-INSTALL.md"; \
     fi; \
-    ./venv/bin/python -c "import pytest" 2>/dev/null || \
-        ./venv/bin/pip -q install --no-index --find-links ./wheels pytest && echo "pytest ready (wheelhouse)"'
+    if ./venv/bin/python -c "import pytest" 2>/dev/null; then echo "pytest: already present"; \
+    elif ./venv/bin/pip -q install --no-index --find-links ./wheels pytest 2>&1 | tail -2; ./venv/bin/python -c "import pytest" 2>/dev/null; then echo "pytest ready (wheelhouse)"; \
+    else echo "WARN: pytest unavailable — step 5 falls back to the import gate"; fi'
 
 step "5/6 verify ONBOARD (gates degrade loudly, never silently)"
 run ssh "$PC2" 'cd magnus && \

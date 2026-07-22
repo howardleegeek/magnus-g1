@@ -168,6 +168,14 @@ def test_missing_audio_file_rejected(tmp_path):
         {"cooldown_sec": None, "buttons": {"RB": {"tts": "x"}}},  # TypeError
         {"buttons": [{"tts": "x"}]},  # AttributeError path
         {"buttons": {"RB": {"play": 123}}},  # non-str play
+        {"buttons": {"RB": {"tts": 12345}}},  # non-str tts → would crash on press
+        {
+            "buttons": {"RB": {"cmd": ["ls", "-la"]}}
+        },  # list cmd → Popen runs first elem only
+        {"buttons": {"RB": {"tts": "   "}}},  # blank tts
+        {
+            "buttons": {"RB": {"tts": "x"}, "R1": {"tts": "y"}}
+        },  # alias+canonical collision
         {"volume": 150, "buttons": {"RB": {"tts": "x"}}},  # out of range
         {"combo_grace_sec": 99, "buttons": {"RB": {"tts": "x"}}},  # out of range
     ],
