@@ -23,4 +23,7 @@ heart.wav        | This one's for you.
 outro.wav        | Thank you! Magnus Labs — robotics, deployed. | 230
 
 # the showroom deployment (button-triggered, standalone play — no 3s limit)
-showroom_welcome.wav | Welcome to the showroom the booth, located in Building B, 7th floor. Enjoy exploring our new outdoor collection.
+# NOTE: showroom_welcome.wav is now a hand-made ElevenLabs "Hope" recording,
+# NOT generated from this line. Do NOT run build_voices.sh --force on it or you
+# lose the ElevenLabs voice. Source MP3 kept in ~/Downloads/. Text for reference:
+#   showroom_welcome.wav | Welcome to the showroom the booth, located in Building B, 7th floor. Enjoy exploring our new outdoor collection.
