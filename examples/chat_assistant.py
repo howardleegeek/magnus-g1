@@ -22,7 +22,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-MODEL = os.environ.get("OR_MODEL", "openai/gpt-oss-20b:free")
+MODEL = os.environ.get("OR_MODEL", "google/gemini-2.5-flash")
 VOSK_MODEL = os.environ.get("VOSK_MODEL", "/home/unitree/magnus/vosk-model")
 MIC_SOURCE = os.environ.get(
     "MIC_SOURCE",

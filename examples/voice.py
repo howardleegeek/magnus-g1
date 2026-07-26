@@ -13,6 +13,8 @@ Usage:
     python examples/voice.py <iface> --stop                 # kill any playing audio
 """
 
+from __future__ import annotations  # Jetson ships an older Python than dev laptops
+
 import argparse
 import sys
 import time

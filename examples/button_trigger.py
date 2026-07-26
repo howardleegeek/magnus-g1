@@ -26,6 +26,8 @@ Run on the robot's Jetson (via systemd, see deploy/magnus-buttons.service) or
 from a laptop:  python examples/button_trigger.py <iface> [--debug]
 """
 
+from __future__ import annotations  # Jetson ships an older Python than dev laptops
+
 import argparse
 import os
 import subprocess
@@ -69,8 +71,13 @@ def pick_hifi(path: Path) -> Path:
     return hifi if hifi.exists() else path
 
 
-def resolve_sink(want: str) -> str:
-    """Match a sink by exact name or substring (names are long and volatile)."""
+def list_sinks() -> tuple[list[str], str]:
+    """Current sink names, plus pactl's stderr when it could not be asked.
+
+    pactl exits 0 even when the connection is refused, so an empty list is
+    ambiguous — the stderr is what distinguishes "no sound cards" from "no
+    server", and only the second one is worth retrying.
+    """
     out = subprocess.run(
         ["pactl", "list", "short", "sinks"],
         capture_output=True,
@@ -79,11 +86,27 @@ def resolve_sink(want: str) -> str:
         env=PULSE_ENV,
     )
     names = [ln.split("\t")[1] for ln in out.stdout.splitlines() if "\t" in ln]
+    return names, out.stderr.strip()
+
+
+def resolve_sink(want: str) -> str:
+    """Match a sink by exact name or substring (names are long and volatile)."""
+    names, err = list_sinks()
+    if not names:
+        # PulseAudio exits when idle unless exit-idle-time=-1, and this daemon
+        # has no login session to respawn it. Poke it, then ask once more.
+        subprocess.run(
+            ["pactl", "info"], capture_output=True, timeout=10, env=PULSE_ENV
+        )
+        names, err = list_sinks()
     if want in names:
         return want
     hits = [n for n in names if want.lower() in n.lower()]
     if not hits:
-        raise RuntimeError(f"no PulseAudio sink matches {want!r} — have: {names}")
+        raise RuntimeError(
+            f"no PulseAudio sink matches {want!r} — have: {names}"
+            + (f" (pactl: {err})" if err else "")
+        )
     return hits[0]
 
 
@@ -130,9 +153,21 @@ class Player:
     def play_wav(self, pcm: bytes, label: str) -> None:
         if self.external is None:
             self._start(lambda: voice.stream_wav(self.client, pcm), label)
-        else:
-            path = pick_hifi(REPO_ROOT / label)
-            self._start(lambda: play_external(path, self.external), f"{label} (ext)")
+            return
+
+        path = pick_hifi(REPO_ROOT / label)
+
+        def run():
+            # A guest pressed the button: making SOME sound matters more than
+            # making it on the right speaker, so a dead PulseAudio falls back to
+            # the robot's own speaker instead of standing there in silence.
+            try:
+                play_external(path, self.external)
+            except Exception as e:
+                log(f"external speaker failed ({e}) — falling back to robot speaker")
+                voice.stream_wav(self.client, pcm)
+
+        self._start(run, f"{label} (ext)")
 
     def tts(self, text: str) -> None:
         # TtsMaker returns on RPC acceptance, not speech end (verified against
