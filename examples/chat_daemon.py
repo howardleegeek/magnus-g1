@@ -1,46 +1,48 @@
-"""Resident low-latency voice chat: listen continuously → GPT → robot speaks.
+"""Resident voice chat: mic AUDIO → gemini-2.5-flash (hears it directly) → robot speaks.
 
-Unlike chat_assistant.py (one-shot, fixed 5s record, reloads everything each
-call), this stays resident: the vosk model and AudioClient load ONCE, and it
-listens with vosk endpoint detection — it reacts the moment you stop talking,
-no fixed wait. Latency drops from ~15s to ~3-4s per turn.
-
-  parec (continuous PCM) → vosk streaming (endpoint = you stopped) →
-  free fast LLM → robot TTS. While the robot speaks, mic input is discarded so
-  it never hears itself.
+Why this beats the old design: vosk's small model garbled speech, so a smart LLM
+still got nonsense and answered badly. Here vosk is used ONLY as a voice-activity
+detector (did the person stop talking?); the actual UNDERSTANDING is done by
+sending the utterance's raw audio to gemini-2.5-flash, which transcribes AND
+answers accurately in one call. Falls back to text models (via the vosk guess)
+only if the audio call fails.
 
 Run:  set -a; . ./openrouter.env; set +a; venv/bin/python chat_daemon.py eth0
-Env: OPENROUTER_API_KEY, MIC_SOURCE, OR_MODEL, VOSK_MODEL, TTS_SPEAKER.
+Env: OPENROUTER_API_KEY, MINIMAX_API_KEY, MIC_SOURCE, TTS_SPEAKER, plus the
+XDG_RUNTIME_DIR/PULSE_SERVER needed for parec.
 """
 
+import base64
+import fcntl
+import io
 import json
 import os
 import subprocess
 import sys
 import time
+import wave
 import urllib.request
 import urllib.error
 
-# try these in order — if one is rate-limited (429/busy), fall through to the next
-MODELS = os.environ.get("OR_MODEL", "google/gemma-4-26b-a4b-it:free").split(",") + [
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-nano-30b-a3b:free",
-    "openai/gpt-oss-20b:free",
-]
+AUDIO_MODEL = os.environ.get("AUDIO_MODEL", "google/gemini-2.5-flash")
+TEXT_MODELS = ["google/gemini-2.5-flash", "openai/gpt-4o-mini"]  # fallback path
 VOSK_MODEL = os.environ.get("VOSK_MODEL", "/home/unitree/magnus/vosk-model")
 MIC_SOURCE = os.environ.get(
     "MIC_SOURCE",
-    "alsa_input.usb-Anker_PowerConf_C200_Anker_PowerConf_C200_ACNV9P1D30466073-02.analog-stereo",
+    "alsa_input.usb-DCMT_Technology_USB_Lavalier_Microphone_214b206000000178-00.mono-fallback",
 )
 TTS_SPEAKER = int(os.environ.get("TTS_SPEAKER", "1"))
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 RATE = 16000
-MIN_WORDS = 2  # ignore stray 1-word noise
+MIN_WORDS = 2  # vosk VAD gate: fewer "words" than this = ignore as noise
 
 SYSTEM_PROMPT = (
-    "You are a friendly voice assistant for the showroom (the booth, "
-    "Building B, 7th floor). Answer about sofas, the outdoor collection, layout, "
-    "and hours. Reply in ENGLISH, ONE short spoken sentence, no lists/markdown."
+    "You are the friendly voice assistant for the showroom "
+    "(suite the booth, Building B, 7th floor). We sell sofas — sectionals, sleepers, "
+    "recliners — and an outdoor collection. Answer the visitor's spoken question "
+    "in ONE short, natural sentence. Do NOT invent facts you weren't given: if "
+    "asked something specific you don't know (exact hours, prices, stock), say "
+    "you'll check with a staff member. Always answer in English."
 )
 
 
@@ -48,29 +50,77 @@ def log(m):
     print(f"[{time.strftime('%H:%M:%S')}] {m}", flush=True)
 
 
-def ask_gpt(question, history):
+def pcm_to_wav(pcm: bytes) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _post(body):
     key = os.environ["OPENROUTER_API_KEY"]
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + history[-4:] + [
-        {"role": "user", "content": question}]
-    for model in MODELS:  # fall through to the next model if one is rate-limited
-        body = {"model": model.strip(), "messages": msgs,
-                "max_tokens": 120, "temperature": 0.7}
-        req = urllib.request.Request(
-            API_URL, data=json.dumps(body).encode(),
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    req = urllib.request.Request(
+        API_URL, data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=40) as r:
+        resp = json.loads(r.read())
+    m = resp["choices"][0]["message"]
+    return (m.get("content") or m.get("reasoning") or "").strip()
+
+
+def answer(pcm: bytes, vosk_guess: str, history) -> str:
+    """Primary: send audio to gemini. Fallback: text models on the vosk guess."""
+    b64 = base64.b64encode(pcm_to_wav(pcm)).decode()
+    audio_msg = {"role": "user", "content": [
+        {"type": "text", "text": "The visitor just said this (audio). Reply as the showroom assistant."},
+        {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}
+    try:
+        t = time.time()
+        text = _post({"model": AUDIO_MODEL,
+                      "messages": [{"role": "system", "content": SYSTEM_PROMPT}]
+                      + history[-4:] + [audio_msg],
+                      "max_tokens": 120, "temperature": 0.6})
+        if text:
+            log(f"[audio via {AUDIO_MODEL} {time.time()-t:.1f}s]")
+            return text
+    except Exception as e:
+        log(f"audio call failed ({e}); falling back to text")
+    for model in TEXT_MODELS:  # degraded fallback using vosk's rough guess
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                resp = json.loads(r.read())
-            msg = resp["choices"][0]["message"]
-            text = (msg.get("content") or msg.get("reasoning") or "").strip()
+            text = _post({"model": model,
+                          "messages": [{"role": "system", "content": SYSTEM_PROMPT}]
+                          + history[-4:] + [{"role": "user", "content": vosk_guess or "(unclear)"}],
+                          "max_tokens": 120, "temperature": 0.6})
             if text:
+                log(f"[text via {model}]")
                 return text
-        except urllib.error.HTTPError as e:
-            log(f"{model.strip()} -> {e.code}, trying next model")
+        except Exception:
             continue
-        except Exception as e:
-            log(f"{model.strip()} -> {e}, trying next model")
-            continue
+    return ask_minimax([{"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": vosk_guess or "(unclear)"}])
+
+
+def ask_minimax(msgs):
+    key = os.environ.get("MINIMAX_API_KEY")
+    if not key:
+        return ""
+    body = {"model": "MiniMax-M2", "messages": msgs, "max_tokens": 120, "temperature": 0.6}
+    req = urllib.request.Request(
+        "https://api.minimax.io/v1/text/chatcompletion_v2",
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            resp = json.loads(r.read())
+        if resp.get("base_resp", {}).get("status_code") == 0:
+            log("[minimax fallback]")
+            m = resp["choices"][0]["message"]
+            return (m.get("content") or m.get("reasoning_content") or "").strip()
+    except Exception as e:
+        log(f"minimax -> {e}")
     return ""
 
 
@@ -83,7 +133,7 @@ def main():
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize
     from unitree_sdk2py.g1.audio.g1_audio_client import AudioClient
 
-    log("loading vosk model (once)...")
+    log("loading vosk (VAD only)...")
     rec = KaldiRecognizer(Model(VOSK_MODEL), RATE)
 
     ChannelFactoryInitialize(0, iface)
@@ -91,33 +141,52 @@ def main():
     audio.SetTimeout(10.0)
     audio.Init()
 
-    history = []
     parec = subprocess.Popen(
         ["parec", f"--device={MIC_SOURCE}", f"--rate={RATE}", "--channels=1",
          "--format=s16le"], stdout=subprocess.PIPE)
-    log("READY — just talk. (Ctrl-C to stop)")
 
+    def drain_mic():
+        fd = parec.stdout.fileno()
+        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+        try:
+            while parec.stdout.read(65536):
+                pass
+        except Exception:
+            pass
+        finally:
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl)
+
+    history = []
+    utter = bytearray()
+    log("READY — just talk. (Ctrl-C to stop)")
     try:
         while True:
             data = parec.stdout.read(4000)
             if not data:
                 break
+            utter += data
             if not rec.AcceptWaveform(data):
                 continue
-            text = json.loads(rec.Result()).get("text", "").strip()
-            if len(text.split()) < MIN_WORDS:
+            guess = json.loads(rec.Result()).get("text", "").strip()
+            if len(guess.split()) < MIN_WORDS:   # not enough speech → drop as noise
+                utter = bytearray()
                 continue
-            log(f"heard: {text!r}")
-            reply = ask_gpt(text, history) or "Sorry, could you repeat that?"
+            pcm = bytes(utter)
+            utter = bytearray()
+            log(f"heard(~{len(pcm)//RATE//2}s, vosk guess: {guess!r})")
+            reply = answer(pcm, guess, history) or "Sorry, could you say that again?"
             log(f"reply: {reply}")
-            history += [{"role": "user", "content": text},
+            history += [{"role": "user", "content": guess},
                         {"role": "assistant", "content": reply}]
-            # speak, and discard everything the mic hears meanwhile (don't self-listen)
+            # speak; suppress self-hearing the whole time, then drain the tail
             audio.TtsMaker(reply, TTS_SPEAKER)
-            speak_until = time.monotonic() + max(2.0, len(reply) * 0.08)
-            while time.monotonic() < speak_until:
-                parec.stdout.read(4000)
-            rec.Reset()  # clear buffered audio before listening again
+            until = time.monotonic() + max(3.0, len(reply) * 0.13) + 1.0
+            while time.monotonic() < until:
+                parec.stdout.read(8000)
+            drain_mic()
+            rec.Reset()
+            utter = bytearray()
     except KeyboardInterrupt:
         pass
     finally:
