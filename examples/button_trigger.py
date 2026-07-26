@@ -113,18 +113,31 @@ def resolve_sink(want: str) -> str:
 def play_external(path: Path, spk) -> None:
     """Play a WAV on the external speaker at the configured gain.
 
-    Gain is applied per-stream rather than by moving the sink's own volume, so
-    a botched value can never leave the showroom's speaker muted or deafening
-    after the daemon exits.
+    The boost is per-stream, so the sink's own level is left at unity and a bad
+    gain value can never persist past the daemon. The sink is un-muted and
+    pinned to 100% first because a reboot, a stray pactl, or someone poking the
+    speaker's own controls otherwise leaves RB silently quiet with nothing in
+    the log to show for it.
     """
     sink = resolve_sink(spk.sink)
+    for args in (["set-sink-mute", sink, "0"], ["set-sink-volume", sink, "100%"]):
+        subprocess.run(["pactl", *args], capture_output=True, timeout=10, env=PULSE_ENV)
+
     vol = int(65536 * spk.gain_pct / 100)
-    subprocess.run(
+    out = subprocess.run(
         ["paplay", f"--device={sink}", f"--volume={vol}", str(path)],
-        check=True,
+        capture_output=True,
+        text=True,
         timeout=EXT_PLAY_TIMEOUT,
         env=PULSE_ENV,
     )
+    if out.returncode != 0:
+        # Without paplay's own words the caller only sees "exit status 1", which
+        # is what made the first field failure take three guesses to diagnose.
+        raise RuntimeError(
+            f"paplay exit {out.returncode} on {path.name}: "
+            f"{out.stderr.strip() or '(no stderr)'}"
+        )
 
 
 class Player:
