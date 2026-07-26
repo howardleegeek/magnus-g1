@@ -85,36 +85,52 @@ def _post(body):
     return (m.get("content") or m.get("reasoning") or "").strip()
 
 
-def answer(pcm: bytes, vosk_guess: str, history) -> str:
-    """Primary: send audio to gemini. Fallback: text models on the vosk guess."""
+# the RB welcome clip's words — if the mic "hears" this, it's our own mp3 playing,
+# not a visitor. Skip it so the LLM never talks over / repeats the welcome.
+WELCOME_WORDS = set(
+    "welcome to the showroom located in building b 7th seventh "
+    "floor enjoy exploring our new outdoor collection".split())
+
+
+def is_welcome_echo(guess: str) -> bool:
+    w = set(guess.lower().split())
+    return bool(w) and len(w & WELCOME_WORDS) / len(w) > 0.5
+
+
+def transcribe_audio(pcm: bytes) -> str:
+    """Accurate ears: gemini transcribes the utterance (small, fast call)."""
     b64 = base64.b64encode(pcm_to_wav(pcm)).decode()
-    audio_msg = {"role": "user", "content": [
-        {"type": "text", "text": "The visitor just said this (audio). Reply as the showroom assistant."},
-        {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}
+    return _post({"model": AUDIO_MODEL,
+                  "messages": [{"role": "user", "content": [
+                      {"type": "text", "text": "Transcribe this speech exactly, nothing else."},
+                      {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}],
+                  "max_tokens": 60, "temperature": 0})
+
+
+def answer(pcm: bytes, vosk_guess: str, history) -> str:
+    """Ears = gemini transcription; brain = MiniMax (paid quota). Fallback = gemini."""
+    heard = vosk_guess
     try:
         t = time.time()
-        text = _post({"model": AUDIO_MODEL,
-                      "messages": [{"role": "system", "content": system_prompt()}]
-                      + history[-4:] + [audio_msg],
-                      "max_tokens": 50, "temperature": 0.5})
-        if text:
-            log(f"[audio via {AUDIO_MODEL} {time.time()-t:.1f}s]")
-            return text
+        heard = transcribe_audio(pcm) or vosk_guess
+        log(f"[transcribed {time.time()-t:.1f}s: {heard!r}]")
     except Exception as e:
-        log(f"audio call failed ({e}); falling back to text")
-    for model in TEXT_MODELS:  # degraded fallback using vosk's rough guess
+        log(f"transcribe failed ({e}); using vosk guess")
+    msgs = [{"role": "system", "content": system_prompt()}] + history[-4:] + [
+        {"role": "user", "content": heard or "(unclear)"}]
+    text = ask_minimax(msgs)                       # primary brain: MiniMax
+    if text:
+        return text
+    for model in TEXT_MODELS:                      # fallback: gemini/gpt text
         try:
-            text = _post({"model": model,
-                          "messages": [{"role": "system", "content": system_prompt()}]
-                          + history[-4:] + [{"role": "user", "content": vosk_guess or "(unclear)"}],
-                          "max_tokens": 120, "temperature": 0.6})
+            text = _post({"model": model, "messages": msgs,
+                          "max_tokens": 50, "temperature": 0.5})
             if text:
                 log(f"[text via {model}]")
                 return text
         except Exception:
             continue
-    return ask_minimax([{"role": "system", "content": system_prompt()},
-                        {"role": "user", "content": vosk_guess or "(unclear)"}])
+    return ""
 
 
 def ask_minimax(msgs):
@@ -188,6 +204,10 @@ def main():
                 continue
             pcm = bytes(utter)
             utter = bytearray()
+            if is_welcome_echo(guess):
+                log(f"(ignored welcome mp3 playing: {guess!r})")
+                rec.Reset()
+                continue
             log(f"heard(~{len(pcm)//RATE//2}s, vosk guess: {guess!r})")
             reply = answer(pcm, guess, history) or "Sorry, could you say that again?"
             log(f"reply: {reply}")
