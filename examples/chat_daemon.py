@@ -108,20 +108,26 @@ def transcribe_audio(pcm: bytes) -> str:
 
 
 def answer(pcm: bytes, vosk_guess: str, history) -> str:
-    """Ears = gemini transcription; brain = MiniMax (paid quota). Fallback = gemini."""
-    heard = vosk_guess
+    """All-gemini: it hears the audio AND answers in ONE call (fastest, most
+    accurate). Text-model / MiniMax fallbacks only if gemini fails."""
+    b64 = base64.b64encode(pcm_to_wav(pcm)).decode()
+    audio_msg = {"role": "user", "content": [
+        {"type": "text", "text": "The visitor just said this (audio). Reply as the showroom assistant."},
+        {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}
     try:
         t = time.time()
-        heard = transcribe_audio(pcm) or vosk_guess
-        log(f"[transcribed {time.time()-t:.1f}s: {heard!r}]")
+        text = _post({"model": AUDIO_MODEL,
+                      "messages": [{"role": "system", "content": system_prompt()}]
+                      + history[-4:] + [audio_msg],
+                      "max_tokens": 50, "temperature": 0.5})
+        if text:
+            log(f"[audio via {AUDIO_MODEL} {time.time()-t:.1f}s]")
+            return text
     except Exception as e:
-        log(f"transcribe failed ({e}); using vosk guess")
+        log(f"audio call failed ({e}); falling back")
     msgs = [{"role": "system", "content": system_prompt()}] + history[-4:] + [
-        {"role": "user", "content": heard or "(unclear)"}]
-    text = ask_minimax(msgs)                       # primary brain: MiniMax
-    if text:
-        return text
-    for model in TEXT_MODELS:                      # fallback: gemini/gpt text
+        {"role": "user", "content": vosk_guess or "(unclear)"}]
+    for model in TEXT_MODELS:
         try:
             text = _post({"model": model, "messages": msgs,
                           "max_tokens": 50, "temperature": 0.5})
@@ -130,7 +136,7 @@ def answer(pcm: bytes, vosk_guess: str, history) -> str:
                 return text
         except Exception:
             continue
-    return ""
+    return ask_minimax(msgs)  # last resort
 
 
 def ask_minimax(msgs):
