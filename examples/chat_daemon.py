@@ -38,7 +38,8 @@ MIN_WORDS = 2  # vosk VAD gate: fewer "words" than this = ignore as noise
 
 SYSTEM_PROMPT = (
     "You are the friendly voice assistant at the showroom booth. Answer the "
-    "visitor's spoken question in ONE short, natural, spoken sentence. Use the "
+    "visitor's spoken question in ONE short spoken sentence of AT MOST 12 words — "
+    "punchy and conversational, never a list. Use the "
     "Showroom facts below; do NOT invent details you weren't given (exact price, "
     "stock, delivery, hours) — offer to get a showroom team member instead. "
     "Always answer in English."
@@ -95,7 +96,7 @@ def answer(pcm: bytes, vosk_guess: str, history) -> str:
         text = _post({"model": AUDIO_MODEL,
                       "messages": [{"role": "system", "content": system_prompt()}]
                       + history[-4:] + [audio_msg],
-                      "max_tokens": 120, "temperature": 0.6})
+                      "max_tokens": 50, "temperature": 0.5})
         if text:
             log(f"[audio via {AUDIO_MODEL} {time.time()-t:.1f}s]")
             return text
@@ -194,7 +195,9 @@ def main():
                         {"role": "assistant", "content": reply}]
             # speak; suppress self-hearing the whole time, then drain the tail
             audio.TtsMaker(reply, TTS_SPEAKER)
-            until = time.monotonic() + max(3.0, len(reply) * 0.13) + 1.0
+            # mute only for roughly how long the speech actually takes (~14 chars/s),
+            # then drain the tail. Keeps latency low without hearing ourselves.
+            until = time.monotonic() + max(1.5, len(reply) * 0.075)
             while time.monotonic() < until:
                 parec.stdout.read(8000)
             drain_mic()
