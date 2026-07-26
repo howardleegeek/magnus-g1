@@ -133,7 +133,9 @@ def write_cfg(tmp_path, payload, raw=None):
 
 def test_shipped_config_valid():
     cfg = load_config(REPO_ROOT / "routines" / "buttons.json", REPO_ROOT)
-    assert "R1" in cfg.mapping and cfg.cooldown > 0 and cfg.volume == 85
+    # 100, not a comfortable level: a showroom is noisy and the robot's speaker
+    # is small, so anything below the SDK maximum is inaudible past a few metres.
+    assert "R1" in cfg.mapping and cfg.cooldown > 0 and cfg.volume == 100
 
 
 def test_unknown_button_rejected(tmp_path):
@@ -194,3 +196,56 @@ def test_nan_cooldown_rejected(tmp_path):
 def test_toplevel_array_rejected(tmp_path):
     with pytest.raises(SystemExit):
         load_config(write_cfg(tmp_path, None, raw='["not", "an", "object"]'), REPO_ROOT)
+
+
+# --- external speaker (PulseAudio route for a powered speaker on the Jetson) ---
+
+
+def test_external_speaker_parsed(tmp_path):
+    cfg = load_config(
+        write_cfg(
+            tmp_path,
+            {
+                "buttons": {"RB": {"tts": "x"}},
+                "external_speaker": {"sink": "C-Media", "gain_pct": 150},
+            },
+        ),
+        REPO_ROOT,
+    )
+    assert cfg.speaker.sink == "C-Media" and cfg.speaker.gain_pct == 150
+
+
+def test_external_speaker_absent_means_robot_speaker(tmp_path):
+    cfg = load_config(write_cfg(tmp_path, {"buttons": {"RB": {"tts": "x"}}}), REPO_ROOT)
+    assert cfg.speaker is None
+
+
+def test_external_speaker_defaults_to_boosted_gain(tmp_path):
+    cfg = load_config(
+        write_cfg(
+            tmp_path,
+            {"buttons": {"RB": {"tts": "x"}}, "external_speaker": {"sink": "usb"}},
+        ),
+        REPO_ROOT,
+    )
+    assert cfg.speaker.gain_pct == 150
+
+
+@pytest.mark.parametrize(
+    "spk",
+    [
+        {"sink": "", "gain_pct": 100},  # empty sink cannot be resolved
+        {"gain_pct": 100},  # sink is required
+        {"sink": "usb", "gain_pct": 0},  # silent — always a mistake
+        {"sink": "usb", "gain_pct": 400},  # past PulseAudio's ceiling = distortion
+        "not-an-object",
+    ],
+)
+def test_bad_external_speaker_rejected(tmp_path, spk):
+    with pytest.raises(SystemExit):
+        load_config(
+            write_cfg(
+                tmp_path, {"buttons": {"RB": {"tts": "x"}}, "external_speaker": spk}
+            ),
+            REPO_ROOT,
+        )

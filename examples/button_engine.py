@@ -54,6 +54,21 @@ class Config(NamedTuple):
     grace: float
     volume: float | None
     mapping: dict[str, dict]
+    # None = play through the robot's own speaker via the SDK. Set to route
+    # "play" actions at an amplified external speaker instead (see Speaker).
+    speaker: "Speaker | None" = None
+
+
+class Speaker(NamedTuple):
+    """An external speaker reached through PulseAudio on the Jetson.
+
+    SDK audio (AudioClient) goes to the robot's internal speaker over DDS and
+    never touches the Jetson's sound card, so a speaker plugged into the Jetson
+    is silent on that path — it needs its own playback route.
+    """
+
+    sink: str  # PulseAudio sink name, or any substring of one
+    gain_pct: int  # 100 = unity; PulseAudio allows software boost above that
 
 
 def canon(name: str) -> str:
@@ -131,7 +146,23 @@ def load_config(path: Path, repo_root: Path) -> Config:
             mapping[b] = action
         if not mapping:
             raise ValueError("config has no buttons")
-        return Config(cooldown, grace, volume, mapping)
+
+        speaker = None
+        spk = data.get("external_speaker")
+        if spk is not None:
+            if not isinstance(spk, dict):
+                raise TypeError("'external_speaker' must be an object")
+            sink = spk.get("sink")
+            if not isinstance(sink, str) or not sink.strip():
+                raise ValueError("external_speaker.sink must be a non-empty string")
+            gain = int(spk.get("gain_pct", 150))
+            # PulseAudio clamps above ~153% (its own hard ceiling) and software
+            # gain past that only adds distortion, so refuse it here instead.
+            if not 0 < gain <= 150:
+                raise ValueError(f"external_speaker.gain_pct must be 1-150, got {gain}")
+            speaker = Speaker(sink.strip(), gain)
+
+        return Config(cooldown, grace, volume, mapping, speaker)
     except (SystemExit, KeyboardInterrupt):
         raise
     except Exception as e:  # OSError, JSON, type errors — everything → one exit path

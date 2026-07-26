@@ -27,6 +27,7 @@ from a laptop:  python examples/button_trigger.py <iface> [--debug]
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import threading
@@ -42,18 +43,74 @@ HEARTBEAT_TIMEOUT = 10.0
 DEFAULT_VOLUME = 85
 TTS_SEC_PER_CHAR = 0.09  # crude speech-duration estimate for busy-guard
 TTS_MIN_SEC = 2.0
+EXT_PLAY_TIMEOUT = 120  # a stuck paplay must not hold the busy slot forever
+
+# systemd starts this daemon without a login session, so PulseAudio's socket has
+# to be named explicitly or paplay finds no server and every press is silent.
+PULSE_ENV = {
+    **os.environ,
+    "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/run/user/1000"),
+    "PULSE_SERVER": os.environ.get("PULSE_SERVER", "unix:/run/user/1000/pulse/native"),
+}
 
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def pick_hifi(path: Path) -> Path:
+    """Prefer <name>_hifi.wav when it exists.
+
+    The SDK path is capped at 16 kHz mono by the robot firmware, but a real
+    powered speaker can use the full-rate master — so a hi-fi sibling is worth
+    using on that route only.
+    """
+    hifi = path.with_name(f"{path.stem}_hifi{path.suffix}")
+    return hifi if hifi.exists() else path
+
+
+def resolve_sink(want: str) -> str:
+    """Match a sink by exact name or substring (names are long and volatile)."""
+    out = subprocess.run(
+        ["pactl", "list", "short", "sinks"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=PULSE_ENV,
+    )
+    names = [ln.split("\t")[1] for ln in out.stdout.splitlines() if "\t" in ln]
+    if want in names:
+        return want
+    hits = [n for n in names if want.lower() in n.lower()]
+    if not hits:
+        raise RuntimeError(f"no PulseAudio sink matches {want!r} — have: {names}")
+    return hits[0]
+
+
+def play_external(path: Path, spk) -> None:
+    """Play a WAV on the external speaker at the configured gain.
+
+    Gain is applied per-stream rather than by moving the sink's own volume, so
+    a botched value can never leave the showroom's speaker muted or deafening
+    after the daemon exits.
+    """
+    sink = resolve_sink(spk.sink)
+    vol = int(65536 * spk.gain_pct / 100)
+    subprocess.run(
+        ["paplay", f"--device={sink}", f"--volume={vol}", str(path)],
+        check=True,
+        timeout=EXT_PLAY_TIMEOUT,
+        env=PULSE_ENV,
+    )
+
+
 class Player:
     """Owns the AudioClient; enforces one audio at a time across WAV and TTS."""
 
-    def __init__(self, audio_client, tts_speaker: int):
+    def __init__(self, audio_client, tts_speaker: int, external=None):
         self.client = audio_client
         self.speaker = tts_speaker
+        self.external = external
         self._thread: threading.Thread | None = None
 
     def busy(self) -> bool:
@@ -71,7 +128,11 @@ class Player:
         self._thread.start()
 
     def play_wav(self, pcm: bytes, label: str) -> None:
-        self._start(lambda: voice.stream_wav(self.client, pcm), label)
+        if self.external is None:
+            self._start(lambda: voice.stream_wav(self.client, pcm), label)
+        else:
+            path = pick_hifi(REPO_ROOT / label)
+            self._start(lambda: play_external(path, self.external), f"{label} (ext)")
 
     def tts(self, text: str) -> None:
         # TtsMaker returns on RPC acceptance, not speech end (verified against
@@ -119,7 +180,15 @@ def main() -> None:
     audio = AudioClient()
     audio.SetTimeout(10.0)
     audio.Init()
-    player = Player(audio, args.speaker)
+    player = Player(audio, args.speaker, cfg.speaker)
+    if cfg.speaker:
+        try:  # fail loudly at startup, not on the first press in front of guests
+            log(
+                f"external speaker: {resolve_sink(cfg.speaker.sink)} "
+                f"@ {cfg.speaker.gain_pct}%"
+            )
+        except Exception as e:
+            log(f"WARN: external speaker unusable ({e}) — presses will error")
 
     try:  # GetVolume doubles as an audio-service/firmware probe
         log(f"audio service probe: GetVolume -> {audio.GetVolume()}")
@@ -176,6 +245,9 @@ def main() -> None:
                     pcm_cache = new_cache
                     if new_cfg.volume is not None and new_cfg.volume != cfg.volume:
                         player.set_volume(new_cfg.volume)
+                    if new_cfg.speaker != cfg.speaker:
+                        player.external = new_cfg.speaker
+                        log(f"external speaker -> {new_cfg.speaker or 'robot (SDK)'}")
                     cfg = new_cfg
                     log(f"config reloaded — {len(cfg.mapping)} button(s)")
                 except SystemExit as e:
