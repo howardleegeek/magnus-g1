@@ -37,13 +37,26 @@ RATE = 16000
 MIN_WORDS = 2  # vosk VAD gate: fewer "words" than this = ignore as noise
 
 SYSTEM_PROMPT = (
-    "You are the friendly voice assistant for the showroom "
-    "(suite the booth, Building B, 7th floor). We sell sofas — sectionals, sleepers, "
-    "recliners — and an outdoor collection. Answer the visitor's spoken question "
-    "in ONE short, natural sentence. Do NOT invent facts you weren't given: if "
-    "asked something specific you don't know (exact hours, prices, stock), say "
-    "you'll check with a staff member. Always answer in English."
+    "You are the friendly voice assistant at the showroom booth. Answer the "
+    "visitor's spoken question in ONE short, natural, spoken sentence. Use the "
+    "Showroom facts below; do NOT invent details you weren't given (exact price, "
+    "stock, delivery, hours) — offer to get a showroom team member instead. "
+    "Always answer in English."
 )
+
+
+CONTEXT_PATH = os.environ.get(
+    "SHOWROOM_CONTEXT", "/home/unitree/magnus/magnus-g1/routines/showroom_context.md")
+
+
+def system_prompt():
+    """Base persona + the editable showroom knowledge file (re-read each turn,
+    so staff can update facts without restarting)."""
+    try:
+        facts = open(CONTEXT_PATH).read().strip()
+        return SYSTEM_PROMPT + "\n\nShowroom facts (answer from these; do not contradict them):\n" + facts
+    except Exception:
+        return SYSTEM_PROMPT
 
 
 def log(m):
@@ -80,7 +93,7 @@ def answer(pcm: bytes, vosk_guess: str, history) -> str:
     try:
         t = time.time()
         text = _post({"model": AUDIO_MODEL,
-                      "messages": [{"role": "system", "content": SYSTEM_PROMPT}]
+                      "messages": [{"role": "system", "content": system_prompt()}]
                       + history[-4:] + [audio_msg],
                       "max_tokens": 120, "temperature": 0.6})
         if text:
@@ -91,7 +104,7 @@ def answer(pcm: bytes, vosk_guess: str, history) -> str:
     for model in TEXT_MODELS:  # degraded fallback using vosk's rough guess
         try:
             text = _post({"model": model,
-                          "messages": [{"role": "system", "content": SYSTEM_PROMPT}]
+                          "messages": [{"role": "system", "content": system_prompt()}]
                           + history[-4:] + [{"role": "user", "content": vosk_guess or "(unclear)"}],
                           "max_tokens": 120, "temperature": 0.6})
             if text:
@@ -99,7 +112,7 @@ def answer(pcm: bytes, vosk_guess: str, history) -> str:
                 return text
         except Exception:
             continue
-    return ask_minimax([{"role": "system", "content": SYSTEM_PROMPT},
+    return ask_minimax([{"role": "system", "content": system_prompt()},
                         {"role": "user", "content": vosk_guess or "(unclear)"}])
 
 
