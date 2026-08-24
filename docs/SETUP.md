@@ -70,3 +70,27 @@ finish Step 5 first and fix the SDK before your first session.
 - **`ModuleNotFoundError: pytest`** — your venv isn't activated (Step 3, line 2).
 - **Wrong Python** — some systems default `python3` to 3.7; install 3.10+
   (`brew install python@3.11` / `sudo apt install python3.11`).
+
+## Second-unit gotchas (Sparco G1, Aug 2026)
+
+`install_onboard.sh` assumes what the first robot happened to have. The second
+one had none of it, so if a unit fails at step 4/6, check these in order:
+
+- **`ensurepip is not available`** — the unit ships no `python3-venv`, and
+  installing it needs sudo. Skip the venv: the system pip installs into
+  `~/.local` with `pip install --user`, which needs no root at all.
+- **`Temporary failure in name resolution`** — the robot has no internet, and
+  `nmcli connection up` is refused without polkit auth. Neither is a blocker:
+  run a local HTTP proxy on the laptop and reverse-tunnel it in, which needs no
+  password on either side.
+
+      ssh -R 8899:127.0.0.1:8899 unitree@192.168.123.164
+      # on the robot: pip install --user --proxy http://127.0.0.1:8899 -e .
+
+  Kill the proxy afterwards and re-verify — the robot must run fully offline.
+- **`Could not locate cyclonedds`** — `CYCLONEDDS_HOME` is NOT the colcon
+  workspace's `install/`; it is `install/cyclonedds`, the directory that
+  actually contains `lib/cmake/CycloneDDS`. The same two vars must also be in
+  the systemd unit or the daemon imports fine by hand and dies as a service.
+- **No passwordless sudo** — use `deploy/magnus-buttons.user.service` plus
+  `loginctl enable-linger unitree` instead of a system unit.

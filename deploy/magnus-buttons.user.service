@@ -1,0 +1,29 @@
+# User-level variant for units WITHOUT python3-venv and WITHOUT passwordless
+# sudo. Install to ~/.config/systemd/user/ and enable with:
+#
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now magnus-buttons
+#     loginctl enable-linger unitree      # starts at boot with nobody logged in
+#
+# Logs: `systemctl --user status magnus-buttons -l` — some units ship without
+# persistent journal files, so `journalctl --user` can come back empty here.
+[Unit]
+Description=Magnus G1 showroom button trigger (RB -> welcome message)
+# Unlimited restarts: PC1's audio service takes ~1 min after power-on, so the
+# restart loop IS the wait-for-robot-ready mechanism. Never permanently fail.
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=/home/unitree/magnus/magnus-g1
+# System python3 + ~/.local site-packages. CYCLONEDDS_HOME/LD_LIBRARY_PATH are
+# what let cyclonedds find libddsc at runtime; without them the import dies at
+# startup and no button ever fires.
+Environment=CYCLONEDDS_HOME=/home/unitree/cyclonedds_ws/install/cyclonedds
+Environment=LD_LIBRARY_PATH=/home/unitree/cyclonedds_ws/install/cyclonedds/lib
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 examples/button_trigger.py eth0
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
