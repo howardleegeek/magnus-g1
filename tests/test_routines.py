@@ -205,7 +205,7 @@ def test_voice_check_cli(tmp_path):
         capture_output=True,
         text=True,
     )
-    assert r.returncode == 0 and "routine-safe" in r.stdout
+    assert r.returncode == 0 and "1 chunk (sent in one call)" in r.stdout
 
 
 def test_missing_iface_errors():

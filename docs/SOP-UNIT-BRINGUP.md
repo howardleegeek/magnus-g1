@@ -37,9 +37,10 @@ Voice pack: generate any missing WAVs per `voices/lines.txt` header, then:
 python examples/voice.py --check voices/intro.wav
 ```
 
-Routine clips (intro/clap_along/heart/outro) must report "1 chunk (routine-safe)".
-`showroom_welcome.wav` reporting "standalone play only" is EXPECTED — it is
-button-triggered standalone audio, not a dance-routine clip.
+Every clip should report `OK:` with its length. "1 chunk" is sent in a single
+call; anything longer reports "N chunks (streamed)" and is *also* fine in a
+routine — arm_dance streams it on a thread. Just give that move a `hold` long
+enough to outlast the sentence, or the arm drops mid-word.
 
 **GATE A:** tests green + dry-run OK + all voice files check clean per the rules above, on the session laptop itself.
 

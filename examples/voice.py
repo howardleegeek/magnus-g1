@@ -81,10 +81,12 @@ def main() -> None:
 
     if args.check:
         pcm = load_pcm(args.check)
-        print(
-            f"OK: {args.check} — {len(pcm) / BYTES_PER_SEC:.1f}s, "
-            f"{'1 chunk (routine-safe)' if len(pcm) <= CHUNK else f'{len(pcm) // CHUNK + 1} chunks (standalone play only)'}"
-        )
+        # Both are usable in a routine now — arm_dance streams anything over one
+        # chunk on a thread. The distinction still matters because the chunked
+        # sender sleeps between sends, so the move's hold has to outlast it.
+        n = (len(pcm) + CHUNK - 1) // CHUNK
+        how = "1 chunk (sent in one call)" if n <= 1 else f"{n} chunks (streamed)"
+        print(f"OK: {args.check} — {len(pcm) / BYTES_PER_SEC:.1f}s, {how}")
         return
     if not args.iface:
         parser.error(

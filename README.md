@@ -131,6 +131,17 @@ RB button → welcome message, running as a systemd service inside the robot.
 One command at the robot: `./scripts/deploy_showroom.sh`. Full doc:
 [docs/SHOWROOM-DEPLOY.md](docs/SHOWROOM-DEPLOY.md).
 
+## Showroom deployment (Tier 2 — Sparco)
+
+RB speaks the Sparco greeting, R2 speaks it while waving. Both run over DDS to
+the robot's own speaker, so the unit works with no network at all.
+
+Read [docs/SOP-SPARCO-G1.md](docs/SOP-SPARCO-G1.md) **before installing on any
+new unit**: this one had no `python3-venv`, no internet and no passwordless
+sudo, so `install_onboard.sh` fails at step 4/6. The SOP has the offline recipe,
+plus the two traps that cost the most time — the Jetson's Python 3.8, and audio
+calls that return success while making no sound.
+
 ## Repo layout
 
 ```
