@@ -9,6 +9,9 @@
     },
     "LB": {
       "tts": "Hello! Thanks for visiting. Let me know if you would like a tour."
+    },
+    "R2": {
+      "cmd": "python3 examples/arm_dance.py eth0 --routine routines/sparco_wave.json"
     }
   }
 }

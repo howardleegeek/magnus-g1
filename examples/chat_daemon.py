@@ -12,6 +12,8 @@ Env: OPENROUTER_API_KEY, MINIMAX_API_KEY, MIC_SOURCE, TTS_SPEAKER, plus the
 XDG_RUNTIME_DIR/PULSE_SERVER needed for parec.
 """
 
+from __future__ import annotations  # Jetson ships an older Python than dev laptops
+
 import base64
 import fcntl
 import io
@@ -47,7 +49,8 @@ SYSTEM_PROMPT = (
 
 
 CONTEXT_PATH = os.environ.get(
-    "SHOWROOM_CONTEXT", "/home/unitree/magnus/magnus-g1/routines/showroom_context.md")
+    "SHOWROOM_CONTEXT", "/home/unitree/magnus/magnus-g1/routines/showroom_context.md"
+)
 
 
 def system_prompt():
@@ -55,7 +58,11 @@ def system_prompt():
     so staff can update facts without restarting)."""
     try:
         facts = open(CONTEXT_PATH).read().strip()
-        return SYSTEM_PROMPT + "\n\nShowroom facts (answer from these; do not contradict them):\n" + facts
+        return (
+            SYSTEM_PROMPT
+            + "\n\nShowroom facts (answer from these; do not contradict them):\n"
+            + facts
+        )
     except Exception:
         return SYSTEM_PROMPT
 
@@ -77,8 +84,10 @@ def pcm_to_wav(pcm: bytes) -> bytes:
 def _post(body):
     key = os.environ["OPENROUTER_API_KEY"]
     req = urllib.request.Request(
-        API_URL, data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        API_URL,
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
     with urllib.request.urlopen(req, timeout=40) as r:
         resp = json.loads(r.read())
     m = resp["choices"][0]["message"]
@@ -89,7 +98,8 @@ def _post(body):
 # not a visitor. Skip it so the LLM never talks over / repeats the welcome.
 WELCOME_WORDS = set(
     "welcome to the showroom located in building b 7th seventh "
-    "floor enjoy exploring our new outdoor collection".split())
+    "floor enjoy exploring our new outdoor collection".split()
+)
 
 
 def is_welcome_echo(guess: str) -> bool:
@@ -100,37 +110,71 @@ def is_welcome_echo(guess: str) -> bool:
 def transcribe_audio(pcm: bytes) -> str:
     """Accurate ears: gemini transcribes the utterance (small, fast call)."""
     b64 = base64.b64encode(pcm_to_wav(pcm)).decode()
-    return _post({"model": AUDIO_MODEL,
-                  "messages": [{"role": "user", "content": [
-                      {"type": "text", "text": "Transcribe this speech exactly, nothing else."},
-                      {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}],
-                  "max_tokens": 60, "temperature": 0})
+    return _post(
+        {
+            "model": AUDIO_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Transcribe this speech exactly, nothing else.",
+                        },
+                        {
+                            "type": "input_audio",
+                            "input_audio": {"data": b64, "format": "wav"},
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 60,
+            "temperature": 0,
+        }
+    )
 
 
 def answer(pcm: bytes, vosk_guess: str, history) -> str:
     """All-gemini: it hears the audio AND answers in ONE call (fastest, most
     accurate). Text-model / MiniMax fallbacks only if gemini fails."""
     b64 = base64.b64encode(pcm_to_wav(pcm)).decode()
-    audio_msg = {"role": "user", "content": [
-        {"type": "text", "text": "The visitor just said this (audio). Reply as the showroom assistant."},
-        {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}]}
+    audio_msg = {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "The visitor just said this (audio). Reply as the showroom assistant.",
+            },
+            {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}},
+        ],
+    }
     try:
         t = time.time()
-        text = _post({"model": AUDIO_MODEL,
-                      "messages": [{"role": "system", "content": system_prompt()}]
-                      + history[-4:] + [audio_msg],
-                      "max_tokens": 50, "temperature": 0.5})
+        text = _post(
+            {
+                "model": AUDIO_MODEL,
+                "messages": [{"role": "system", "content": system_prompt()}]
+                + history[-4:]
+                + [audio_msg],
+                "max_tokens": 50,
+                "temperature": 0.5,
+            }
+        )
         if text:
             log(f"[audio via {AUDIO_MODEL} {time.time()-t:.1f}s]")
             return text
     except Exception as e:
         log(f"audio call failed ({e}); falling back")
-    msgs = [{"role": "system", "content": system_prompt()}] + history[-4:] + [
-        {"role": "user", "content": vosk_guess or "(unclear)"}]
+    msgs = (
+        [{"role": "system", "content": system_prompt()}]
+        + history[-4:]
+        + [{"role": "user", "content": vosk_guess or "(unclear)"}]
+    )
     for model in TEXT_MODELS:
         try:
-            text = _post({"model": model, "messages": msgs,
-                          "max_tokens": 50, "temperature": 0.5})
+            text = _post(
+                {"model": model, "messages": msgs, "max_tokens": 50, "temperature": 0.5}
+            )
             if text:
                 log(f"[text via {model}]")
                 return text
@@ -143,11 +187,17 @@ def ask_minimax(msgs):
     key = os.environ.get("MINIMAX_API_KEY")
     if not key:
         return ""
-    body = {"model": "MiniMax-M2", "messages": msgs, "max_tokens": 120, "temperature": 0.6}
+    body = {
+        "model": "MiniMax-M2",
+        "messages": msgs,
+        "max_tokens": 120,
+        "temperature": 0.6,
+    }
     req = urllib.request.Request(
         "https://api.minimax.io/v1/text/chatcompletion_v2",
         data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             resp = json.loads(r.read())
@@ -178,8 +228,15 @@ def main():
     audio.Init()
 
     parec = subprocess.Popen(
-        ["parec", f"--device={MIC_SOURCE}", f"--rate={RATE}", "--channels=1",
-         "--format=s16le"], stdout=subprocess.PIPE)
+        [
+            "parec",
+            f"--device={MIC_SOURCE}",
+            f"--rate={RATE}",
+            "--channels=1",
+            "--format=s16le",
+        ],
+        stdout=subprocess.PIPE,
+    )
 
     def drain_mic():
         fd = parec.stdout.fileno()
@@ -205,7 +262,7 @@ def main():
             if not rec.AcceptWaveform(data):
                 continue
             guess = json.loads(rec.Result()).get("text", "").strip()
-            if len(guess.split()) < MIN_WORDS:   # not enough speech → drop as noise
+            if len(guess.split()) < MIN_WORDS:  # not enough speech → drop as noise
                 utter = bytearray()
                 continue
             pcm = bytes(utter)
@@ -217,8 +274,10 @@ def main():
             log(f"heard(~{len(pcm)//RATE//2}s, vosk guess: {guess!r})")
             reply = answer(pcm, guess, history) or "Sorry, could you say that again?"
             log(f"reply: {reply}")
-            history += [{"role": "user", "content": guess},
-                        {"role": "assistant", "content": reply}]
+            history += [
+                {"role": "user", "content": guess},
+                {"role": "assistant", "content": reply},
+            ]
             # speak; suppress self-hearing the whole time, then drain the tail
             audio.TtsMaker(reply, TTS_SPEAKER)
             # mute only for roughly how long the speech actually takes (~14 chars/s),

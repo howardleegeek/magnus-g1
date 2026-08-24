@@ -8,6 +8,8 @@ Usage:
     python examples/preflight.py --actions  # also dump the SDK's arm action names
 """
 
+from __future__ import annotations  # Jetson ships an older Python than dev laptops
+
 import argparse
 import shutil
 import subprocess

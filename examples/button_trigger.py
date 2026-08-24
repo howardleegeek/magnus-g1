@@ -46,6 +46,7 @@ DEFAULT_VOLUME = 85
 TTS_SEC_PER_CHAR = 0.09  # crude speech-duration estimate for busy-guard
 TTS_MIN_SEC = 2.0
 EXT_PLAY_TIMEOUT = 120  # a stuck paplay must not hold the busy slot forever
+CMD_TIMEOUT = 180  # an arm routine that hangs must release the button eventually
 
 # systemd starts this daemon without a login session, so PulseAudio's socket has
 # to be named explicitly or paplay finds no server and every press is silent.
@@ -181,6 +182,27 @@ class Player:
                 voice.stream_wav(self.client, pcm)
 
         self._start(run, f"{label} (ext)")
+
+    def run_cmd(self, cmd: str) -> None:
+        """Run a button's shell command under the same one-at-a-time guard.
+
+        Popen with stderr to DEVNULL was fire-and-forget: a routine that failed
+        left no trace at all, and a mashed button could start a second arm
+        routine on top of the first. Both matter for a gesture bound to a button
+        guests will press repeatedly.
+        """
+
+        def run():
+            out = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=CMD_TIMEOUT
+            )
+            if out.returncode != 0:
+                raise RuntimeError(
+                    f"exit {out.returncode}: "
+                    f"{(out.stderr or out.stdout).strip()[-400:] or '(no output)'}"
+                )
+
+        self._start(run, f"cmd {cmd[:60]!r}")
 
     def tts(self, text: str) -> None:
         # TtsMaker returns on RPC acceptance, not speech end (verified against
@@ -347,19 +369,14 @@ def main() -> None:
                     log(f"{btn} → tts {action['tts']!r}")
                     player.tts(action["tts"])
             elif "cmd" in action:
-                log(f"{btn} → cmd: {action['cmd']}")
-                try:
-                    # shell=True is intentional: buttons.json is the operator's
-                    # scripting surface, editable only by users who already have
-                    # an SSH shell on this machine — no privilege is added.
-                    subprocess.Popen(
-                        action["cmd"],
-                        shell=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                except Exception as e:
-                    log(f"ERROR cmd: {e}")
+                # shell=True is intentional: buttons.json is the operator's
+                # scripting surface, editable only by users who already have an
+                # SSH shell on this machine — no privilege is added.
+                if player.busy():
+                    log(f"{btn} pressed — ignored, previous action still running")
+                else:
+                    log(f"{btn} → cmd: {action['cmd']}")
+                    player.run_cmd(action["cmd"])
 
 
 if __name__ == "__main__":

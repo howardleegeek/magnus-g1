@@ -17,6 +17,8 @@ Usage:
 Preflight first: python examples/preflight.py
 """
 
+from __future__ import annotations  # Jetson ships an older Python than dev laptops
+
 import argparse
 import json
 import sys

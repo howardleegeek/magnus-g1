@@ -255,13 +255,17 @@ def test_examples_run_on_the_jetsons_python():
     """The Jetson ships Python 3.8; laptops ship 3.11+.
 
     A `-> tuple[list[str], str]` return annotation is evaluated at def time and
-    crash-loops the service on 3.8 — which is exactly how it reached the robot
-    once. `from __future__ import annotations` makes every annotation lazy, so
-    require it in any module the robot imports.
+    crash-loops on 3.8. This shipped twice — first in button_trigger, then in
+    arm_dance, because the guard named its modules explicitly and a file added
+    later was simply not on the list. So scan the directory instead: any module
+    the robot can import has to opt into lazy annotations.
     """
-    for name in ("button_trigger.py", "button_engine.py", "voice.py"):
-        src = (REPO_ROOT / "examples" / name).read_text()
-        assert "from __future__ import annotations" in src, (
-            f"{name} must start with `from __future__ import annotations` or it "
-            f"can crash on the Jetson's Python 3.8"
-        )
+    missing = [
+        f.name
+        for f in sorted((REPO_ROOT / "examples").glob("*.py"))
+        if "from __future__ import annotations" not in f.read_text()
+    ]
+    assert not missing, (
+        f"{missing} must have `from __future__ import annotations` — without it a "
+        f"builtin-generic annotation crashes on the Jetson's Python 3.8"
+    )

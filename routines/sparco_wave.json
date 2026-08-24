@@ -1,0 +1,11 @@
+{
+  "name": "sparco-wave-v1",
+  "bpm": 100,
+  "default_beats": 8,
+  "comment": "R2 greeting: speaks while waving, then puts the arm down. 'release arm' is not optional — the G1 holds the last arm pose indefinitely, so a routine without it leaves the robot frozen mid-wave in front of guests.",
+  "tts_speaker": 1,
+  "moves": [
+    { "action": "high wave", "say": "voices/sparco_short.wav", "beats": 6 },
+    { "action": "release arm", "hold": 2.0 }
+  ]
+}

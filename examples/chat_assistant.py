@@ -13,6 +13,8 @@ Wire it to a button in routines/buttons.json:
 Env: OPENROUTER_API_KEY. Config: MIC_SOURCE, REC_SECS, OR_MODEL, WHISPER_SIZE, TTS_SPEAKER.
 """
 
+from __future__ import annotations  # Jetson ships an older Python than dev laptops
+
 import json
 import os
 import subprocess
@@ -51,8 +53,17 @@ def log(m):
 def record() -> str:
     log(f"recording {REC_SECS}s from mic...")
     subprocess.run(
-        ["timeout", str(REC_SECS + 1), "parecord", f"--device={MIC_SOURCE}",
-         "--rate=16000", "--channels=1", "--format=s16le", "--file-format=wav", REC_PATH],
+        [
+            "timeout",
+            str(REC_SECS + 1),
+            "parecord",
+            f"--device={MIC_SOURCE}",
+            "--rate=16000",
+            "--channels=1",
+            "--format=s16le",
+            "--file-format=wav",
+            REC_PATH,
+        ],
         check=False,
     )
     log(f"recorded {Path(REC_PATH).stat().st_size} bytes")
@@ -90,13 +101,17 @@ def ask_gpt(question: str) -> str:
         "model": MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": question or "(the visitor said something unclear)"},
+            {
+                "role": "user",
+                "content": question or "(the visitor said something unclear)",
+            },
         ],
         "max_tokens": 200,
         "temperature": 0.7,
     }
     req = urllib.request.Request(
-        API_URL, data=json.dumps(body).encode(),
+        API_URL,
+        data=json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     log(f"asking GPT ({MODEL})...")
