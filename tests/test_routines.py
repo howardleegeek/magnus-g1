@@ -111,8 +111,10 @@ def test_garbage_file_rejected(tmp_path):
         voice.load_pcm(p)
 
 
-def test_long_clip_rejected_in_routine(tmp_path):
-    # >3s (one chunk) clips must be refused inside routines
+def test_over_one_chunk_clip_is_streamed_not_rejected(tmp_path):
+    # A clip past the firmware's 3s chunk used to be refused outright, which
+    # forced a second shortened recording for anything a routine wanted to say.
+    # It is now accepted and flagged for the chunked sender.
     long_wav = write_wav(tmp_path / "long.wav", seconds=4.0)
     r = write_routine(
         tmp_path,
@@ -122,6 +124,32 @@ def test_long_clip_rejected_in_routine(tmp_path):
                 {"action": "release arm"},
             ]
         },
+    )
+    _, moves = load_routine(r)
+    assert moves[0]["say_chunked"] is True
+
+
+def test_short_clip_uses_the_fast_path(tmp_path):
+    short_wav = write_wav(tmp_path / "short.wav", seconds=1.0)
+    r = write_routine(
+        tmp_path,
+        {
+            "moves": [
+                {"action": "clap", "say": str(short_wav)},
+                {"action": "release arm"},
+            ]
+        },
+    )
+    _, moves = load_routine(r)
+    assert moves[0]["say_chunked"] is False
+
+
+def test_absurdly_long_clip_still_rejected(tmp_path):
+    # The cap exists so one move cannot silently outlast the whole routine.
+    huge = write_wav(tmp_path / "huge.wav", seconds=45.0)
+    r = write_routine(
+        tmp_path,
+        {"moves": [{"action": "clap", "say": str(huge)}, {"action": "release arm"}]},
     )
     with pytest.raises(SystemExit):
         load_routine(r)

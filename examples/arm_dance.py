@@ -6,7 +6,7 @@ so this is safe to run free-standing on day 1.
 Choreography lives in routines/*.json — edit those, not this file. Timing is
 beat-based: hold = beats * 60 / bpm. A move may also speak, via either:
     "tts": "Hello!"              robot's built-in TTS
-    "say": "voices/intro.wav"    pre-generated WAV (16 kHz mono 16-bit, < 3 s)
+    "say": "voices/intro.wav"    pre-generated WAV (16 kHz mono 16-bit)
 Voice fires right before the move's arm action.
 
 Usage:
@@ -22,12 +22,14 @@ from __future__ import annotations  # Jetson ships an older Python than dev lapt
 import argparse
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 
 import voice  # sibling module: WAV validation + chunk constants
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+MAX_SAY_SEC = 30  # a clip longer than this is a mistake, not choreography
 DEFAULT_ROUTINE = REPO_ROOT / "routines" / "demo.json"
 
 
@@ -53,12 +55,16 @@ def load_routine(path: Path) -> tuple[dict, list[dict]]:
         if "say" in m:
             wav = REPO_ROOT / m["say"]
             pcm = voice.load_pcm(wav)  # validates 16k/mono/16-bit, exits on mismatch
-            if len(pcm) > voice.CHUNK:
+            secs = len(pcm) / voice.BYTES_PER_SEC
+            if secs > MAX_SAY_SEC:
                 sys.exit(
-                    f"move #{i}: {wav} is {len(pcm)/voice.BYTES_PER_SEC:.1f}s — "
-                    f"routine clips must be < 3s (use examples/voice.py for long audio)"
+                    f"move #{i}: {wav} is {secs:.1f}s — routine clips are capped at "
+                    f"{MAX_SAY_SEC}s so a move cannot outlast the whole routine"
                 )
+            # Over one chunk the firmware needs the chunked sender, which sleeps
+            # between sends — so it runs on a thread and the arm moves meanwhile.
             move["say_pcm"] = pcm
+            move["say_chunked"] = len(pcm) > voice.CHUNK
             move["say"] = m["say"]
         moves.append(move)
 
@@ -130,18 +136,29 @@ def main() -> None:
 
     speaker = data.get("tts_speaker", 0)
     stream_id = str(int(time.time() * 1000))
+    speaking = None  # in-flight chunked clip, joined before PlayStop
     print("Starting — keep the e-stop remote in hand.")
     for m in moves:
         if audio and "tts" in m:
             audio.TtsMaker(m["tts"], speaker)  # speaks async on the robot
         if audio and "say_pcm" in m:
-            audio.PlayStream(
-                voice.APP, stream_id, m["say_pcm"]
-            )  # single chunk, returns fast
+            if m["say_chunked"]:
+                speaking = threading.Thread(
+                    target=voice.stream_wav, args=(audio, m["say_pcm"]), daemon=True
+                )
+                speaking.start()
+            else:
+                audio.PlayStream(
+                    voice.APP, stream_id, m["say_pcm"]
+                )  # single chunk, returns fast
         print(f"  -> {m['action']}")
         client.ExecuteAction(action_map[m["action"]])
         time.sleep(m["hold"])
     if audio:
+        # PlayStop would cut a chunked clip off mid-sentence, so let it finish
+        # first. Bounded: a wedged sender must not hold the button forever.
+        if speaking is not None:
+            speaking.join(timeout=MAX_SAY_SEC)
         audio.PlayStop(voice.APP)
     print("Done. Arms released.")
 
