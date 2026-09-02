@@ -118,14 +118,30 @@ ssh unitree@192.168.123.164 "passwd"
 
 ## Step 4 — Get the repo
 
+The repo is **private**. Two ways in — use whichever you were given.
+
+**A. From the bundle file (no GitHub account needed).** You were handed
+`magnus-g1.bundle` alongside this document. It is the whole repo, history and
+all, in one 7 MB file, and it works with no network:
+
+```powershell
+cd $env:USERPROFILE
+git clone .\magnus-g1.bundle magnus-g1
+cd magnus-g1
+```
+
+You can commit locally. Pushing back needs option B.
+
+**B. As a GitHub collaborator.** If Howard added your GitHub account:
+
 ```powershell
 cd $env:USERPROFILE
 git clone https://github.com/howardleegeek/magnus-g1.git
 cd magnus-g1
 ```
 
-It's a private repo, so git will ask you to sign in to GitHub. If you have no
-access, ask Howard — that's an account thing, not something to work around.
+Git will prompt you to sign in. If it refuses, your account hasn't been added —
+ask Howard rather than working around it.
 
 The repo has a `CLAUDE.md` at its root. Open Claude Code **in this folder** and
 it picks that up automatically, which is what makes it useful here rather than
