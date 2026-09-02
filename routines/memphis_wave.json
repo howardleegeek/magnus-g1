@@ -1,0 +1,11 @@
+{
+  "name": "memphis-hub-wave",
+  "bpm": 100,
+  "default_beats": 8,
+  "comment": "R2: 'Let's make Memphis the robotic hub of U.S.' spoken while the hand waves sideways at face level, then the arm goes down. Clip is 2.5s; hold is 3.5s so the arm stays up until the sentence finishes. 'release arm' is mandatory — the G1 holds its last pose indefinitely.",
+  "tts_speaker": 1,
+  "moves": [
+    { "action": "face wave", "say": "voices/memphis_hub.wav", "hold": 3.5 },
+    { "action": "release arm", "hold": 2.0 }
+  ]
+}
